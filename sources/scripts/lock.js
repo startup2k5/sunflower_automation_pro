@@ -13,36 +13,19 @@
   // Kiểm tra xem luồng có đang bị chặn bởi Captcha hoặc Goblin Swarm hay không
   function isFlowBlocked(tenLuong) {
     if (tenLuong === "captcha") return false;
+    if (S.__captchaActive || S.__captchaInterrupted) return true;
     const captchaOpen = typeof S.isCaptchaOpen === "function" ? S.isCaptchaOpen() : false;
     if (captchaOpen) return true;
-    if (!captchaOpen) {
-      S.__captchaActive = false;
-      S.__captchaInterrupted = false;
-      if (luongDangGiu === "captcha") {
-        luongDangGiu = null;
-        S.luongDangGiu = null;
-      }
-    }
     if (typeof S.isGoblinSwarm === "function" && S.isGoblinSwarm()) return true;
     return false;
   }
 
   function xinKhoa(tenLuong) {
     const bayGio = Date.now();
-    const captchaOpen = typeof S.isCaptchaOpen === "function" ? S.isCaptchaOpen() : false;
+    const isCapDangXuLy = S.__captchaActive || S.__captchaInterrupted || (typeof S.isCaptchaOpen === "function" && S.isCaptchaOpen());
 
-    // Nếu Captcha đã đóng thì tự động dọn sạch cờ Captcha còn sót lại
-    if (!captchaOpen) {
-      S.__captchaActive = false;
-      S.__captchaInterrupted = false;
-      if (luongDangGiu === "captcha") {
-        luongDangGiu = null;
-        S.luongDangGiu = null;
-      }
-    }
-
-    // Nếu Captcha đang mở -> Chặn tuyệt đối 100% mọi luồng khác
-    if (tenLuong !== "captcha" && isFlowBlocked(tenLuong)) {
+    // Nếu Captcha đang mở hoặc đang trong phiên giải Captcha/nhận thưởng -> Chặn tuyệt đối 100% mọi luồng khác
+    if (tenLuong !== "captcha" && (isCapDangXuLy || isFlowBlocked(tenLuong))) {
       return false;
     }
 
@@ -77,7 +60,7 @@
   }
 
   function nhaKhoa(tenLuong) {
-    if (tenLuong === "captcha" || !tenLuong || (typeof S.isCaptchaOpen === "function" && !S.isCaptchaOpen())) {
+    if (tenLuong === "captcha" || !tenLuong) {
       S.__captchaActive = false;
       S.__captchaInterrupted = false;
     }

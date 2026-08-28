@@ -265,7 +265,13 @@
     const tokens = String(btn.className || "").split(/\s+/).filter(Boolean);
     if (tokens.includes("cursor-not-allowed")) return false;
     if (tokens.includes("disabled")) return false;
+    if (tokens.includes("opacity-50") || tokens.includes("pointer-events-none")) return false;
     if (btn.getAttribute("aria-disabled") === "true") return false;
+
+    // Kiểm tra style inline
+    const style = btn.getAttribute("style") || "";
+    if (style.includes("pointer-events: none") || style.includes("opacity: 0.5") || style.includes("opacity: 0.4")) return false;
+
     return true;
   }
 
@@ -307,6 +313,28 @@
     if (!dlg) return null;
     const rectModal = dlg.getBoundingClientRect();
     const midX = rectModal.left + rectModal.width * 0.45;
+
+    // Kiểm tra nếu panel bên phải hiển thị "0 in stock", "sold out", "out of stock", "limit reached", "max"
+    const rightPanelText = Array.from(dlg.querySelectorAll("div, p, span"))
+      .filter((el) => {
+        const r = el.getBoundingClientRect();
+        return r.left >= midX && xemPhanTuRanh(el);
+      })
+      .map((el) => el.textContent || "")
+      .join(" ")
+      .toLowerCase();
+
+    if (
+      /\b0\s+in\s+stock\b/i.test(rightPanelText) ||
+      /\bin\s+stock:\s*0\b/i.test(rightPanelText) ||
+      /\bsold\s+out\b/i.test(rightPanelText) ||
+      /\bout\s+of\s+stock\b/i.test(rightPanelText) ||
+      /\b(hết\s*hàng|het\s*hang|0\s*còn\s*lại)\b/i.test(rightPanelText) ||
+      /inventory\s+limit|max\s+capacity|đã\s+đầy\s+kho/i.test(rightPanelText)
+    ) {
+      console.log("[SFL Mua Hạt Giống] ℹ️ Loại hạt này đã hết hàng trong shop (0 in stock) hoặc kho đồ đã đạt giới hạn tối đa.");
+      return null;
+    }
 
     const buttons = Array.from(dlg.querySelectorAll("button, [role='button'], div.cursor-pointer, [class*='cursor-pointer']"));
     const hopLe = [];

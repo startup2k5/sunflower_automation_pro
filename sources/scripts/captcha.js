@@ -46,25 +46,51 @@
     return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
   }
 
-  // Kích hoạt React Fiber props
+  // Kích hoạt React Fiber props (hỗ trợ React 17, 18, Fiber memoizedProps)
   function kichHoatReactProps(el) {
     if (!el) return;
+    const fakeEv = {
+      stopPropagation: () => {},
+      preventDefault: () => {},
+      stopImmediatePropagation: () => {},
+      target: el,
+      currentTarget: el,
+      button: 0,
+      buttons: 1,
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      isTrusted: true,
+    };
+
     for (const k in el) {
-      if (k.startsWith("__reactProps$") || k.startsWith("__reactEventHandlers$")) {
-        const p = el[k];
-        if (p) {
+      if (k.startsWith("__reactProps$") || k.startsWith("__reactEventHandlers$") || k.startsWith("__reactFiber$")) {
+        const p = el[k]?.memoizedProps || el[k];
+        if (p && typeof p === "object") {
           if (typeof p.onPointerDown === "function") {
-            try { p.onPointerDown({ stopPropagation: () => {}, preventDefault: () => {}, target: el, currentTarget: el, button: 0 }); } catch (_e) {}
+            try { p.onPointerDown(fakeEv); } catch (_e) {}
+          }
+          if (typeof p.onMouseDown === "function") {
+            try { p.onMouseDown(fakeEv); } catch (_e) {}
+          }
+          if (typeof p.onPointerUp === "function") {
+            try { p.onPointerUp(fakeEv); } catch (_e) {}
+          }
+          if (typeof p.onMouseUp === "function") {
+            try { p.onMouseUp(fakeEv); } catch (_e) {}
           }
           if (typeof p.onClick === "function") {
-            try { p.onClick({ stopPropagation: () => {}, preventDefault: () => {}, target: el, currentTarget: el, button: 0 }); } catch (_e) {}
+            try { p.onClick(fakeEv); } catch (_e) {}
+          }
+          if (typeof p.onOpen === "function") {
+            try { p.onOpen(); } catch (_e) {}
           }
         }
       }
     }
   }
 
-  // Click tâm chuẩn xác với độ trễ cực ngắn
+  // Click tâm chuẩn xác với đầy đủ chuỗi PointerEvent, MouseEvent và React Props
   function clickTam(el) {
     if (!el) return false;
     const view = el.ownerDocument?.defaultView || window;
@@ -81,6 +107,8 @@
       view: view,
       clientX: cx,
       clientY: cy,
+      pageX: cx + (view.scrollX || 0),
+      pageY: cy + (view.scrollY || 0),
       screenX: cx,
       screenY: cy,
       which: 1,
@@ -115,6 +143,8 @@
     try { el.click?.(); } catch (_e4) {}
     kichHoatReactProps(el);
     if (el.parentElement) kichHoatReactProps(el.parentElement);
+    if (el.parentElement?.parentElement) kichHoatReactProps(el.parentElement.parentElement);
+    if (el.firstElementChild) kichHoatReactProps(el.firstElementChild);
 
     // Nhả chuột nhanh sau 20ms
     setTimeout(() => {
@@ -350,17 +380,21 @@
         for (const btn of cacNut) {
           if (!xemPhanTuRanh(btn)) continue;
           const txt = (btn.textContent || "").trim().toLowerCase();
-          if (
-            txt === "claim" ||
-            txt.includes("claim") ||
-            txt.includes("continue") ||
-            txt.includes("tiếp tục") ||
-            txt.includes("xác nhận") ||
-            txt.includes("open") ||
-            txt.includes("sweet") ||
-            txt.includes("awesome") ||
-            txt.includes("woohoo")
-          ) {
+          
+          if (txt.includes("tap the chest") || txt.includes("chest to open") || txt.includes("stop the")) continue;
+
+          const laNutNhan =
+            txt === "claim" || txt.includes("claim") ||
+            txt === "continue" || txt.includes("continue") ||
+            txt === "tiếp tục" || txt.includes("tiếp tục") ||
+            txt === "xác nhận" || txt.includes("xác nhận") ||
+            txt === "sweet!" || txt.includes("sweet") ||
+            txt === "awesome!" || txt.includes("awesome") ||
+            txt === "woohoo!" || txt.includes("woohoo") ||
+            txt === "open" || txt === "mở" ||
+            txt === "close" || txt === "đóng" || txt === "ok";
+
+          if (laNutNhan) {
             console.log(`%c[SFL Captcha] 🎁 Bấm nút nhận thưởng hoàn tất Captcha: "${txt}"`, "color: #00e676; font-weight: bold;");
             clickTam(btn);
             daBamClaim = true;
@@ -419,56 +453,112 @@
     return false;
   }
 
-  // ═══════ Giải Captcha Rương Kho Báu ("Tap the chest to open it") Tốc Độ Cao ═══════
-  async function giaiTreasureChest(doc) {
-    console.log("[SFL Captcha] 📦 Đang giải Rương kho báu siêu tốc...");
-    S.hanhDongCuoi = "📦 Đang mở rương kho báu...";
-
-    await ngu(300);
-
-    let nutRuong = null;
-    const allSpans = doc.querySelectorAll("span, p, div");
+  // ═══════ Tìm container Modal đang hiển thị chứa từ khóa mục tiêu ═══════
+  function timModalHienThi(doc, keywords = []) {
+    if (!doc || !doc.body) return null;
+    const allSpans = doc.querySelectorAll("span, p, h1, h2, h3, div");
     for (const s of allSpans) {
       if (!xemPhanTuRanh(s)) continue;
       const txt = (s.textContent || "").trim().toLowerCase();
-      if (txt.includes("tap the chest") || txt.includes("chest to open")) {
-        const parentBox = s.closest("div.cursor-pointer") || s.parentElement;
-        const imgChest = parentBox?.querySelector("img.w-16, img[style*='transform'], img.absolute") || parentBox?.querySelector("img");
-        nutRuong = imgChest || parentBox;
-        break;
+      const match = keywords.some((kw) => txt.includes(kw));
+      if (match) {
+        const modal = s.closest("[role='dialog'], div[class*='fixed'][class*='inset-0'], div[class*='fixed'], div[class*='bg-brown'], div[class*='p-2'], div[class*='p-1']") ||
+                      s.parentElement?.parentElement?.parentElement ||
+                      s.parentElement;
+        return modal;
       }
     }
+    return null;
+  }
 
-    if (!nutRuong) {
-      nutRuong = doc.querySelector("img.w-16, img[style*='transform'][style*='perspective']");
-    }
+  // ═══════ Giải Captcha Rương Kho Báu ("Tap the chest to open it") Tốc Độ Cao ═══════
+  async function giaiTreasureChest(doc) {
+    console.log("%c[SFL Captcha] 📦 Đang giải Rương kho báu siêu tốc...", "color: #00bcd4; font-weight: bold; font-size: 13px;");
+    S.hanhDongCuoi = "📦 Đang mở rương kho báu...";
 
-    if (nutRuong) {
-      clickTam(nutRuong);
+    // ── GIAI ĐOẠN 1: BẤM MỞ RƯƠNG (CHỈ CLICK TRONG PHẠM VI MODAL CAPTCHA, KHÔNG CHẠM VÀO HUD) ──
+    for (let tapLoop = 0; tapLoop < 8; tapLoop += 1) {
+      let modalChest = null;
+      for (const d of layTaiLieuGame()) {
+        modalChest = timModalHienThi(d, ["tap the chest", "chest to open"]);
+        if (modalChest) break;
+      }
+
+      // Nếu không còn Modal có chữ "tap the chest" -> Rương đã mở thành công
+      if (!modalChest) {
+        console.log("%c[SFL Captcha] 🗝️ Rương đã mở thành công! Đang chờ hoạt cảnh nhận thưởng...", "color: #4caf50; font-weight: bold;");
+        break;
+      }
+
+      // 1. Chỉ tìm ảnh và container nằm BÊN TRONG Modal này
+      const imgsInModal = modalChest.querySelectorAll("img");
+      for (const img of imgsInModal) {
+        if (!xemPhanTuRanh(img)) continue;
+        clickTam(img);
+        if (img.parentElement && img.parentElement !== modalChest) clickTam(img.parentElement);
+        const cBox = img.closest("div.cursor-pointer, button, [role='button']");
+        if (cBox && cBox !== modalChest) clickTam(cBox);
+      }
+
+      // 2. Tìm tất cả các box bấm được trong Modal
+      const boxesInModal = modalChest.querySelectorAll("div.cursor-pointer, button, [role='button']");
+      for (const box of boxesInModal) {
+        if (!xemPhanTuRanh(box) || box === modalChest) continue;
+        clickTam(box);
+      }
+
       await ngu(400);
     }
 
-    // Bấm nút nhận thưởng / Claim / Continue nếu có
-    for (let loop = 0; loop < 6; loop += 1) {
-      let coNut = false;
+    // Đợi hoạt cảnh rương bung phần thưởng (800ms)
+    await ngu(800);
+
+    // ── GIAI ĐOẠN 2: BẤM NÚT NHẬN THƯỞNG (CHỈ TÌM TRONG PHẠM VI MODAL NHẬN THƯỞNG) ──
+    let daBamClaim = false;
+    for (let loop = 0; loop < 20; loop += 1) {
       for (const d of layTaiLieuGame()) {
-        const cacNut = d.querySelectorAll("button, [role='button'], div[class*='cursor-pointer']");
+        const modalReward = timModalHienThi(d, ["claim", "reward", "congratulations", "you found", "sweet", "awesome", "woohoo", "continue"]) || d;
+        const cacNut = modalReward.querySelectorAll("button, [role='button'], div[class*='cursor-pointer']");
         for (const btn of cacNut) {
           if (!xemPhanTuRanh(btn)) continue;
           const txt = (btn.textContent || "").trim().toLowerCase();
-          if (txt.includes("claim") || txt.includes("continue") || txt.includes("open") || txt.includes("tiếp tục") || txt.includes("nhận")) {
-            console.log(`[SFL Captcha] 🎁 Bấm nút nhận thưởng: "${txt}"`);
+
+          // BỎ QUA text hướng dẫn mở rương nếu còn sót lại
+          if (txt.includes("tap the chest") || txt.includes("chest to open") || txt.includes("stop the")) continue;
+
+          const laNutNhan =
+            txt === "claim" || txt.includes("claim") ||
+            txt === "continue" || txt.includes("continue") ||
+            txt === "tiếp tục" || txt.includes("tiếp tục") ||
+            txt === "nhận" || txt.includes("nhận thưởng") ||
+            txt === "sweet!" || txt.includes("sweet") ||
+            txt === "awesome!" || txt.includes("awesome") ||
+            txt === "woohoo!" || txt.includes("woohoo") ||
+            txt === "open" || txt === "mở" ||
+            txt === "close" || txt === "đóng" || txt === "ok" ||
+            txt === "got it" || txt.includes("got it");
+
+          if (laNutNhan) {
+            console.log(`%c[SFL Captcha] 🎁 Bấm nút nhận thưởng hoàn tất Rương: "${txt}"`, "color: #00e676; font-weight: bold;");
             clickTam(btn);
-            coNut = true;
-            await ngu(300);
+            daBamClaim = true;
+            await ngu(400);
             break;
           }
         }
-        if (coNut) break;
+        if (daBamClaim) break;
       }
-      if (!coNut) break;
+
+      if (daBamClaim) {
+        await ngu(300);
+        if (!isCaptchaOpen()) break;
+        daBamClaim = false;
+      }
+
+      await ngu(250);
     }
 
+    await dongPopupCaptcha();
     return true;
   }
 
@@ -476,18 +566,26 @@
   async function giaiPopupClaim(doc) {
     if (isCaptchaOpen()) return false;
     console.log("[SFL Captcha] 🎁 Đang xử lý Popup Nhận thưởng...");
-    await ngu(300);
+    await ngu(250);
 
     for (const d of layTaiLieuGame()) {
-      const cacNut = d.querySelectorAll("button, [role='button'], div[class*='cursor-pointer'], img[src*='chest']");
+      const modal = timModalHienThi(d, ["claim", "reward", "congratulations", "you found", "sweet", "awesome", "woohoo"]);
+      if (!modal) continue;
+      const cacNut = modal.querySelectorAll("button, [role='button'], div[class*='cursor-pointer']");
       for (const btn of cacNut) {
         if (!xemPhanTuRanh(btn)) continue;
         const txt = (btn.textContent || "").trim().toLowerCase();
-        if (txt.includes("claim") || txt.includes("continue") || txt.includes("tiếp tục") ||
-            txt.includes("open") || txt.includes("mở") || txt.includes("close") || txt.includes("đóng") ||
-            btn.tagName === "IMG") {
+        if (txt.includes("tap the chest") || txt.includes("chest to open")) continue;
+        const laNutClaim =
+          txt === "claim" || txt.includes("claim") ||
+          txt === "continue" || txt.includes("continue") ||
+          txt === "tiếp tục" || txt.includes("tiếp tục") ||
+          txt === "sweet!" || txt.includes("sweet") ||
+          txt === "awesome!" || txt.includes("awesome") ||
+          txt === "woohoo!" || txt.includes("woohoo");
+        if (laNutClaim) {
           clickTam(btn);
-          await ngu(250);
+          await ngu(300);
         }
       }
     }
@@ -506,7 +604,15 @@
     }
 
     dangBan = true;
-    console.log("%c[SFL Captcha] 🚨 PHÁT HIỆN CAPTCHA! Tạm dừng mọi luồng để tập trung giải siêu tốc...", "color: #ff3838; font-weight: bold; font-size: 14px;");
+    S.__captchaActive = true;
+    console.log("%c[SFL Captcha] 🚨 PHÁT HIỆN CAPTCHA! Tạm dừng mọi luồng, chờ 2 giây để giao diện ổn định rồi giải...", "color: #ff3838; font-weight: bold; font-size: 14px;");
+
+    // Đợi 2 giây để modal/popup hiển thị và render đầy đủ React Fiber trước khi bắt đầu giải
+    await ngu(2000);
+
+    if (!isCaptchaOpen()) {
+      return true;
+    }
 
     try {
       const taiLieu = layTaiLieuGame();

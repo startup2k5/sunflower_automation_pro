@@ -632,7 +632,7 @@
           let tenHatTiep = null;
           let soLuongTiep = 0;
 
-          // Lọc các hạt giống khác còn trong kho và sắp xếp tiếp từ ngắn ngày đến dài ngày
+          // Lọc các hạt giống đúng mùa khác còn trong kho và sắp xếp tiếp từ ngắn ngày đến dài ngày
           const tiepCandidates = [];
           for (const sName of seedsCuaMua) {
             if (sName !== hatInfo.tenHat && Number(inv[sName] || 0) > 0) {
@@ -644,23 +644,10 @@
           if (tiepCandidates.length > 0) {
             tenHatTiep = tiepCandidates[0].name;
             soLuongTiep = tiepCandidates[0].amount;
-          } else {
-            // Fallback hạt giống khác ngoài mùa
-            const fallbackTiep = [];
-            for (const [k, v] of Object.entries(inv)) {
-              if (k.endsWith(" Seed") && k !== hatInfo.tenHat && Number(v || 0) > 0 && CROP_GROWTH_SECONDS[k] !== undefined) {
-                fallbackTiep.push({ name: k, amount: Number(v), seconds: CROP_GROWTH_SECONDS[k] });
-              }
-            }
-            fallbackTiep.sort((a, b) => a.seconds - b.seconds);
-            if (fallbackTiep.length > 0) {
-              tenHatTiep = fallbackTiep[0].name;
-              soLuongTiep = fallbackTiep[0].amount;
-            }
           }
 
           if (!tenHatTiep) {
-            console.log(`[SFL Trồng Ruộng] ℹ️ Đã hết toàn bộ hạt giống trong kho.`);
+            console.log(`[SFL Trồng Ruộng] ℹ️ Đã hết toàn bộ hạt giống đúng mùa (${season}) trong kho -> Dừng gieo hạt.`);
             break;
           }
           const hatMoi = await chuanBiHatGiong(tenHatTiep, soLuongTiep);

@@ -1139,6 +1139,79 @@
     ],
   };
 
+  const SEED_BASE_STOCK = {
+    // Crops
+    "Sunflower Seed": 800,
+    "Potato Seed": 400,
+    "Rhubarb Seed": 400,
+    "Zucchini Seed": 400,
+    "Pumpkin Seed": 300,
+    "Carrot Seed": 200,
+    "Cabbage Seed": 180,
+    "Yam Seed": 180,
+    "Soybean Seed": 180,
+    "Broccoli Seed": 180,
+    "Beetroot Seed": 160,
+    "Pepper Seed": 160,
+    "Cauliflower Seed": 160,
+    "Parsnip Seed": 120,
+    "Eggplant Seed": 100,
+    "Corn Seed": 100,
+    "Onion Seed": 100,
+    "Turnip Seed": 80,
+    "Radish Seed": 80,
+    "Wheat Seed": 80,
+    "Kale Seed": 60,
+    "Artichoke Seed": 60,
+    "Barley Seed": 60,
+
+    // Fruits
+    "Tomato Seed": 20,
+    "Lemon Seed": 20,
+    "Blueberry Seed": 20,
+    "Orange Seed": 20,
+    "Apple Seed": 20,
+    "Banana Plant": 20,
+
+    // Flowers
+    "Sunpetal Seed": 16,
+    "Bloom Seed": 8,
+    "Lily Seed": 4,
+    "Edelweiss Seed": 4,
+    "Gladiolus Seed": 4,
+    "Lavender Seed": 4,
+    "Clover Seed": 4,
+
+    // Greenhouse
+    "Rice Seed": 10,
+    "Olive Seed": 10,
+    "Grape Seed": 10,
+  };
+
+  function getSeedInventoryLimitMultiplier(seedName) {
+    if (["Rice Seed", "Olive Seed", "Grape Seed"].includes(seedName)) return 5;
+    if (["Tomato Seed", "Lemon Seed", "Blueberry Seed", "Orange Seed"].includes(seedName)) return 2;
+    if (["Apple Seed", "Banana Plant"].includes(seedName)) return 1.5;
+    return 2.5;
+  }
+
+  function getSeedInventoryLimit(seedName, state) {
+    if (["Celestine Seed", "Lunara Seed", "Duskberry Seed"].includes(seedName)) return 10;
+    const baseStock = SEED_BASE_STOCK[seedName] || 40;
+    const mult = getSeedInventoryLimitMultiplier(seedName);
+    let limit = Math.ceil(baseStock * mult);
+
+    // Warehouse boost (1.2x)
+    const warehouse = state?.buildings?.Warehouse;
+    const hasWarehouse = Array.isArray(warehouse)
+      ? warehouse.some((b) => (b.readyAt ?? 0) <= Date.now() && b.coordinates)
+      : !!warehouse;
+    if (hasWarehouse) {
+      limit = Math.ceil(limit * 1.2);
+    }
+    return limit;
+  }
+
   function calculateSeedPrice(seedSpec, state) {
     if (!seedSpec || !state) return seedSpec?.price || 1;
     let price = seedSpec.price;
@@ -1172,23 +1245,46 @@
       return 0;
     }
 
+    // 1. Kiểm tra điều kiện ô đất trồng (Planting Spot)
+    const inv = state.inventory || {};
+    if (seedSpec.type === "fruit") {
+      const hasFruitPatch = toSafeNumber(inv["Fruit Patch"]) >= 1 || (state.fruitPatches && Object.keys(state.fruitPatches).length > 0);
+      if (!hasFruitPatch) return 0;
+    }
+    if (seedSpec.type === "flower") {
+      const hasFlowerBed = toSafeNumber(inv["Flower Bed"]) >= 1 || (state.flowers && Object.keys(state.flowers).length > 0);
+      if (!hasFlowerBed) return 0;
+    }
+    if (seedSpec.type === "greenhouse") {
+      const hasGreenhouse = toSafeNumber(inv["Greenhouse"]) >= 1 || !!state.greenhouse;
+      if (!hasGreenhouse) return 0;
+    }
+
+    // 2. Kiểm tra giới hạn kho (Inventory Limit) - Nếu đã đầy kho thì không mua
+    const currentInvQty = toSafeNumber(inv[seedSpec.name]);
+    const invLimit = getSeedInventoryLimit(seedSpec.name, state);
+    const headroom = Math.max(0, invLimit - currentInvQty);
+    if (headroom <= 0) {
+      return 0; // Đã đạt giới hạn tối đa hạt giống trong kho
+    }
+
     const unitPrice = calculateSeedPrice(seedSpec, state);
 
-    // CHỈ mua khi server cung cấp stock thực tế — KHÔNG dùng fallback mặc định
-    // Fallback 400 cũ rất nguy hiểm: mua khi shop đóng/hết hàng → server reject → ban
+    // 3. CHỈ mua khi server cung cấp stock thực tế — KHÔNG dùng fallback mặc định
     if (!state.stock || state.stock[seedSpec.name] === undefined) {
       return 0; // Không có dữ liệu stock từ server → bỏ qua
     }
     const stock = toSafeNumber(state.stock[seedSpec.name]);
     if (stock <= 0) return 0;
 
-    if (unitPrice <= 0) {
-      return stock;
+    let maxBuy = Math.min(stock, headroom);
+    if (unitPrice > 0) {
+      const maxAffordable = Math.floor(currentCoins / unitPrice);
+      if (maxAffordable <= 0) return 0;
+      maxBuy = Math.min(maxBuy, maxAffordable);
     }
-    const maxAffordable = Math.floor(currentCoins / unitPrice);
-    if (maxAffordable <= 0) return 0;
 
-    return Math.min(stock, maxAffordable);
+    return maxBuy;
   }
 
   function batchBuySeedsViaService(requestedSeason = null) {
@@ -2357,7 +2453,7 @@
               "Rice Seed", "Olive Seed", "Grape Seed"
             ],
             winter: [
-              "Potato Seed", "Cabbage Seed", "Beetroot Seed", "Cauliflower Seed", "Parsnip Seed", "Onion Seed", "Turnip Seed", "Wheat Seed", "Kale Seed",
+              "Sunflower Seed", "Potato Seed", "Cabbage Seed", "Beetroot Seed", "Cauliflower Seed", "Parsnip Seed", "Onion Seed", "Turnip Seed", "Wheat Seed", "Kale Seed",
               "Lemon Seed", "Blueberry Seed", "Apple Seed",
               "Sunpetal Seed", "Bloom Seed", "Lily Seed", "Edelweiss Seed",
               "Rice Seed", "Olive Seed", "Grape Seed"
@@ -2405,27 +2501,32 @@
               if (!hasGreenhouse) continue;
             }
 
-            // 2. Kiểm tra stock trong cửa hàng (nếu undefined mặc định 400)
-            const rawStock = stock[s.name];
-            const stockQty = rawStock !== undefined ? toSafeNumber(rawStock) : 400;
+            // 2. Kiểm tra stock trong cửa hàng (NGHIÊM NGẶT: Nếu undefined hoặc <= 0 thì bỏ qua ngay, KHÔNG fallback 400 ảo)
+            if (!stock || stock[s.name] === undefined) continue;
+            const stockQty = toSafeNumber(stock[s.name]);
             if (stockQty <= 0) continue;
 
-            // 3. Tính đơn giá sau chiết khấu/boosts
+            // 3. Kiểm tra giới hạn kho đồ (Inventory Limit chuẩn theo Sunflower Land)
+            const currentInv = toSafeNumber(inventory[s.name]);
+            const invLimit = getSeedInventoryLimit(s.name, state);
+            const headroom = Math.max(0, invLimit - currentInv);
+            if (headroom <= 0) {
+              // Đã đạt giới hạn tối đa của loại hạt này trong kho đồ
+              continue;
+            }
+
+            // 4. Tính đơn giá sau chiết khấu/boosts
             let unitPrice = s.price;
             if (hasKuebiko) unitPrice = 0;
             if (s.category === "Flower" && hasHungryCaterpillar) unitPrice = 0;
 
-            // 4. Tính số lượng tối đa có thể mua (dựa trên coins và stock)
-            let maxBuy = stockQty;
+            // 5. Tính số lượng tối đa có thể mua (dựa trên coins, stock thực tế và headroom)
+            let maxBuy = Math.min(stockQty, headroom);
             if (unitPrice > 0) {
               const affordable = Math.floor(remainingCoins / unitPrice);
+              if (affordable <= 0) continue;
               maxBuy = Math.min(maxBuy, affordable);
             }
-
-            // 5. Giới hạn theo sức chứa kho đồ (tối đa 400 hạt giống)
-            const currentInv = toSafeNumber(inventory[s.name]);
-            const headroom = Math.max(0, 400 - currentInv);
-            maxBuy = Math.min(maxBuy, headroom);
 
             if (maxBuy <= 0) continue;
 
