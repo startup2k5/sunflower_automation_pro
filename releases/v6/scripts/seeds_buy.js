@@ -342,10 +342,17 @@
   async function tickSeedsBuy(force = false) {
     if (dangBan) return false;
 
-    // 0. KIỂM TRA SỐ DƯ TIỀN TỆ: NẾU < 1 XU THÌ BỎ QUA LUỒNG MUA HẠT
-    const currentCoins = Number(S.gameState?.coins ?? S.userData?.coins ?? 0);
-    if (currentCoins < 1) {
-      console.log(`%c[SFL Mua Hạt Giống] 💰 Số dư hiện tại (${currentCoins.toFixed(2)} xu < 1 xu) -> Bỏ qua luồng mua hạt giống để tiết kiệm tiền.`, "color: #ff9800; font-weight: bold;");
+    // 0. KIỂM TRA SỐ DƯ TIỀN TỆ: NẾU < 0.01 XU THÌ BỎ QUA LUỒNG MUA HẠT (Sunflower Seed = 0.01)
+    const currentCoins = Number(
+      S.gameState?.coins ??
+      S.gameState?.user?.coins ??
+      S.gameState?.balance ??
+      S.gameState?.user?.balanceSFL ??
+      S.userData?.coins ??
+      0
+    );
+    if (currentCoins < 0.01) {
+      console.log(`%c[SFL Mua Hạt Giống] 💰 Số dư hiện tại (${currentCoins.toFixed(3)} xu < 0.01 xu) -> Bỏ qua luồng mua hạt giống để tiết kiệm tiền.`, "color: #ff9800; font-weight: bold;");
       return false;
     }
 

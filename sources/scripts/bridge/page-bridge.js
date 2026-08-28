@@ -504,6 +504,8 @@
 
     return {
       timestamp: new Date().toLocaleTimeString(),
+      coins: toSafeNumber(state.coins ?? state.balance),
+      balance: toSafeNumber(state.balance),
       user,
       inventory,
       resources: {
@@ -2228,10 +2230,10 @@
       if (svc) {
         try {
           const state = svc.state?.context?.state;
-          const coins = toSafeNumber(state?.coins);
+          const coins = toSafeNumber(state?.coins ?? state?.balance);
           remainingCoins = coins;
 
-          if (coins < 1) {
+          if (coins < 0.01) {
             window.postMessage({
               _sfl: true,
               type: "SFL_BUY_SEASONAL_SEEDS_RESULT",

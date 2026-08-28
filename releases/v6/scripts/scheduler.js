@@ -195,11 +195,12 @@
           continue;
         }
 
-        // Bỏ qua luồng Mua Hạt Giống nếu số tiền < 1 xu hoặc đã mua ở vòng trước
+        // Bỏ qua luồng Mua Hạt Giống nếu số tiền < 0.01 xu hoặc đã mua ở vòng trước
         if (luongObj.id === "seeds_buy") {
-          const coins = Number(S.gameState?.coins ?? S.userData?.coins ?? 0);
-          if (coins < 1) {
-            console.log(`%c[SFL Scheduler] 💰 Số dư hiện tại (${coins.toFixed(2)} xu < 1 xu) -> Bỏ qua luồng Mua Hạt Giống.`, "color: #ff9800;");
+          const state = S.gameState || S.userData || {};
+          const coins = Number(state?.coins ?? state?.user?.coins ?? state?.balance ?? state?.user?.balanceSFL ?? S.userData?.coins ?? 0);
+          if (coins < 0.01) {
+            console.log(`%c[SFL Scheduler] 💰 Số dư hiện tại (${coins.toFixed(3)} xu < 0.01 xu) -> Bỏ qua luồng Mua Hạt Giống.`, "color: #ff9800;");
             continue;
           }
           if (soThuTuVongLap > 1 || S.__daMuaHatGiongVongDau) {
