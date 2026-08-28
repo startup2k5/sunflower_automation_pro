@@ -1430,18 +1430,11 @@
               if (data.seedName && data.seedName !== "AUTO") {
                 seedOrder = [data.seedName];
               } else {
-                // Ưu tiên hạt đất ruộng đúng mùa, sắp xếp từ ngắn ngày nhất -> dài ngày nhất
+                // Chỉ gieo hạt giống đúng mùa vụ hiện tại
                 const seasonalCropSeeds = SEASONAL_CROP_SEEDS_TABLE[season] || SEASONAL_CROP_SEEDS_TABLE.spring;
                 seedOrder = seasonalCropSeeds
                   .filter((s) => cropTimes[s] !== undefined)
                   .sort((a, b) => (cropTimes[a] || 999999) - (cropTimes[b] || 999999));
-
-                // Thêm bất kỳ loại hạt đất ruộng nào còn trong kho nếu hạt theo mùa hết
-                for (const k of Object.keys(state.inventory || {})) {
-                  if (k.endsWith(" Seed") && !seedOrder.includes(k) && cropTimes[k] !== undefined) {
-                    seedOrder.push(k);
-                  }
-                }
               }
 
               let remainingEmptyPlotIds = [...emptyPlotIds];

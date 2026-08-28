@@ -593,22 +593,9 @@
       let tenHatChon = danhSachHatKhaDung[0]?.name || null;
       let soLuongHat = danhSachHatKhaDung[0]?.amount || 0;
 
-      // Fallback bất kỳ hạt giống nào trong kho (nếu không có hạt mùa vụ), cũng xếp ngắn ngày -> dài ngày
-      if (!tenHatChon) {
-        const fallbackCandidates = [];
-        for (const [k, v] of Object.entries(inv)) {
-          const count = Number(v || 0);
-          if (k.endsWith(" Seed") && count > 0 && CROP_GROWTH_SECONDS[k] !== undefined) {
-            fallbackCandidates.push({ name: k, amount: count, seconds: CROP_GROWTH_SECONDS[k] });
-          }
-        }
-        fallbackCandidates.sort((a, b) => a.seconds - b.seconds);
-        tenHatChon = fallbackCandidates[0]?.name || null;
-        soLuongHat = fallbackCandidates[0]?.amount || 0;
-      }
-
+      // NẾU HẾT HẠT GIỐNG ĐÚNG MÙA -> BỎ QUA NGAY (TUYỆT ĐỐI KHÔNG CỐ LẤY HẠT TRÁI MÙA TRONG KHO)
       if (!tenHatChon || soLuongHat <= 0) {
-        console.log(`[SFL Trồng Ruộng] ℹ️ Đã hết hạt giống trong kho -> Bỏ qua gieo hạt.`);
+        console.log(`%c[SFL Trồng Ruộng] ℹ️ Đã hết hạt giống đúng mùa (${season}) trong kho -> Bỏ qua gieo hạt (không dùng hạt trái mùa).`, "color: #9e9e9e;");
         return false;
       }
 

@@ -226,6 +226,25 @@
           }
         }
 
+        // Bỏ qua luồng Gieo Hạt nếu trong kho không còn bất kỳ hạt giống đúng mùa nào
+        if (luongObj.id === "crops_plant") {
+          const state = S.gameState || S.userData || {};
+          const inv = state?.inventory || S.userData?.inventory || {};
+          const season = (state?.season?.season || state?.user?.season || "spring").toLowerCase();
+          const SEASONAL_CROP_PLOT_SEEDS = {
+            spring: ["Sunflower Seed", "Rhubarb Seed", "Carrot Seed", "Cabbage Seed", "Soybean Seed", "Corn Seed", "Wheat Seed", "Kale Seed", "Barley Seed"],
+            summer: ["Sunflower Seed", "Potato Seed", "Zucchini Seed", "Pepper Seed", "Beetroot Seed", "Cauliflower Seed", "Eggplant Seed", "Radish Seed", "Wheat Seed"],
+            autumn: ["Potato Seed", "Pumpkin Seed", "Carrot Seed", "Yam Seed", "Broccoli Seed", "Soybean Seed", "Wheat Seed", "Barley Seed", "Artichoke Seed"],
+            winter: ["Potato Seed", "Cabbage Seed", "Beetroot Seed", "Cauliflower Seed", "Parsnip Seed", "Onion Seed", "Turnip Seed", "Wheat Seed", "Kale Seed"],
+          };
+          const seedsCuaMua = SEASONAL_CROP_PLOT_SEEDS[season] || SEASONAL_CROP_PLOT_SEEDS.spring;
+          const hasSeasonalSeed = seedsCuaMua.some((s) => Number(inv[s] || 0) >= 1);
+          if (!hasSeasonalSeed) {
+            console.log(`%c[SFL Scheduler] ℹ️ Đã hết hạt giống đúng mùa (${season}) trong kho -> Bỏ qua luồng gieo hạt.`, "color: #9e9e9e;");
+            continue;
+          }
+        }
+
         // Bỏ qua luồng Hoa nếu không có hoa nở và không đủ hạt giống đúng mùa/nguyên liệu trồng
         if (luongObj.id === "flowers") {
           const state = S.gameState;
