@@ -485,7 +485,7 @@
     if (t === "goblin" || t.includes("moon") || t.includes("seeker") || t.includes("zomb") || t.includes("skele")) return true;
     if (typeof item.src === "string") {
       const s = item.src.toLowerCase();
-      if (s.includes("skeleton") || s.includes("goblin") || s.includes("moon_seeker") || s.includes("zombie")) return true;
+      if (s.includes("skeleton") || s.includes("goblin") || s.includes("moonseeker") || s.includes("moon_seeker") || s.includes("zombie")) return true;
     }
     return false;
   }
@@ -494,7 +494,7 @@
     if (!first || typeof first !== "object") return false;
     if (typeof first.isGoblin === "boolean" || typeof first.isMoonSeeker === "boolean" || typeof first.isZombie === "boolean" || typeof first.isSkeleton === "boolean") return true;
     if (typeof first.goblin === "boolean" || typeof first.moonSeeker === "boolean" || typeof first.skeleton === "boolean" || typeof first.zombie === "boolean") return true;
-    if (typeof first.src === "string" && (first.src.startsWith("data:image") || first.src.includes("crops") || first.src.includes("goblin") || first.src.includes("skeleton") || first.src.includes("npc"))) return true;
+    if (typeof first.src === "string" && (first.src.startsWith("data:image") || first.src.includes("crops") || first.src.includes("goblin") || first.src.includes("skeleton") || first.src.includes("npc") || first.src.includes("moonseeker"))) return true;
     return false;
   }
 
@@ -509,7 +509,7 @@
   function _findGrid16InFiber(f) {
     if (!f) return null;
     let hook = f.memoizedState;
-    for (let hi = 0; hi < 60 && hook; hi += 1) {
+    for (let hi = 0; hi < 80 && hook; hi += 1) {
       const st = hook.memoizedState;
       if (Array.isArray(st) && st.length === 16 && _isCaptchaGridItem(st[0])) {
         return _mapCaptchaGridItems(st);
@@ -531,69 +531,137 @@
   }
 
   function readCaptchaGridItems() {
-    const candidates = [];
-    try {
-      const dialogs = document.querySelectorAll('[role="dialog"]');
-      for (let i = 0; i < dialogs.length; i += 1) candidates.push(dialogs[i]);
-    } catch (_e) {}
+    // 1. Quét tất cả các container chứa grid 16 ô trên toàn bộ trang (kể cả trong Headless UI Modal Portal)
+    const allWraps = Array.from(
+      document.querySelectorAll("div.flex.flex-wrap.justify-center.items-center, div.flex.flex-wrap.justify-center, div.flex.flex-wrap")
+    );
 
-    try {
-      const wraps = document.querySelectorAll("div.flex.flex-wrap.justify-center.items-center, div.flex.flex-wrap");
-      for (let wi = 0; wi < wraps.length; wi += 1) {
-        let anc = wraps[wi].parentElement;
-        for (let up = 0; up < 12 && anc; up += 1) {
-          if (!candidates.includes(anc)) candidates.push(anc);
-          anc = anc.parentElement;
-        }
-      }
-    } catch (_e) {}
-
-    for (let ci = 0; ci < candidates.length; ci += 1) {
-      const dlg = candidates[ci];
-      if (!dlg) continue;
-
-      const wrap =
-        dlg.querySelector(".flex.flex-wrap.justify-center.items-center") ||
-        dlg.querySelector(".flex.flex-wrap.justify-center") ||
-        dlg.querySelector(".flex.flex-wrap");
+    for (let wi = 0; wi < allWraps.length; wi += 1) {
+      const wrap = allWraps[wi];
       if (!wrap) continue;
 
       const children = Array.from(wrap.children).filter(
-        (el) => el && el.tagName === "DIV" && el.classList?.contains("cursor-pointer"),
+        (el) => el && el.tagName === "DIV" && el.classList?.contains("cursor-pointer")
       );
-      if (children.length < 16) continue;
-      const cells = children.slice(0, 16);
+      if (children.length !== 16) continue;
+      const cells = children;
 
+      // ── CHIẾN LƯỢC 1: Quét trực tiếp React Props & Fiber của từng ô cell và thẻ <img> bên trong ──
+      const itemsDirect = [];
+      let directTargetCount = 0;
+
+      for (let i = 0; i < 16; i += 1) {
+        const cell = cells[i];
+        const img = cell.querySelector("img") || cell;
+
+        let rawSrc = "";
+        let isTarget = false;
+
+        // A. Thử đọc từ React Props (thường chứa nguyên bản JSX props trước khi bị addNoise đổi thành data:image)
+        const imgPropsKey = Object.keys(img).find((k) => k.startsWith("__reactProps") || k.startsWith("__reactEventHandlers"));
+        if (imgPropsKey && img[imgPropsKey] && typeof img[imgPropsKey].src === "string") {
+          rawSrc = img[imgPropsKey].src;
+        }
+
+        // B. Thử đọc từ React Fiber của thẻ <img>
+        if (!rawSrc) {
+          const imgFiberKey = Object.keys(img).find((k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance"));
+          if (imgFiberKey && img[imgFiberKey]) {
+            const ifib = img[imgFiberKey];
+            rawSrc = ifib.memoizedProps?.src || ifib.pendingProps?.src || "";
+          }
+        }
+
+        // C. Thử đọc từ React Props/Fiber của ô cell chứa <img>
+        if (!rawSrc) {
+          const cellFiberKey = Object.keys(cell).find((k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance"));
+          if (cellFiberKey && cell[cellFiberKey]) {
+            const cfib = cell[cellFiberKey];
+            const ch = cfib.memoizedProps?.children || cfib.pendingProps?.children;
+            if (ch && ch.props && typeof ch.props.src === "string") {
+              rawSrc = ch.props.src;
+            }
+          }
+        }
+
+        // D. Fallback nếu thẻ <img> trên DOM chưa bị addNoise đổi thành base64
+        if (!rawSrc || rawSrc.startsWith("data:")) {
+          const domSrc = img.getAttribute("src") || img.currentSrc || "";
+          if (domSrc && !domSrc.startsWith("data:")) {
+            rawSrc = domSrc;
+          }
+        }
+
+        const sLow = String(rawSrc).toLowerCase();
+        if (
+          sLow.includes("goblin") ||
+          sLow.includes("moonseeker") ||
+          sLow.includes("moon_seeker") ||
+          sLow.includes("skeleton") ||
+          sLow.includes("zombie")
+        ) {
+          isTarget = true;
+          directTargetCount += 1;
+        }
+
+        itemsDirect.push({
+          index: i,
+          isGoblin: isTarget,
+          src: sLow.slice(0, 120),
+        });
+      }
+
+      // Sunflower Land Captcha luôn có đúng 3 mục tiêu (GOBLIN_COUNT = 3)
+      if (directTargetCount >= 1 && directTargetCount <= 6) {
+        console.log(`%c[SFL Bridge] 🎯 Đọc thành công ${directTargetCount} mục tiêu từ React Props/Fiber trực tiếp của 16 ô!`, "color: #00e676; font-weight: bold;");
+        return itemsDirect;
+      }
+
+      // ── CHIẾN LƯỢC 2: Duyệt ngược cây React Fiber (f.return) để tìm State items của StopTheGoblins ──
       for (let ci2 = 0; ci2 < cells.length; ci2 += 1) {
         const cell = cells[ci2];
         const fiberKey = Object.keys(cell).find(
-          (k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance"),
+          (k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance")
         );
         if (!fiberKey) continue;
         let f = cell[fiberKey];
-        for (let depth = 0; depth < 80 && f; depth += 1) {
+        for (let depth = 0; depth < 100 && f; depth += 1) {
           const found = _findGrid16InFiber(f);
-          if (found) return found;
+          if (found) {
+            console.log("%c[SFL Bridge] 🎯 Tìm thấy 16 ô Captcha từ Hook State của StopTheGoblins!", "color: #00e676; font-weight: bold;");
+            return found;
+          }
           f = f.return;
         }
       }
+    }
 
+    // ── CHIẾN LƯỢC 3: Quét toàn bộ React Fiber từ tất cả các Dialog / Modal Portal ──
+    const dialogs = document.querySelectorAll('[role="dialog"], div.fixed.inset-0, #root');
+    for (let di = 0; di < dialogs.length; di += 1) {
+      const dlg = dialogs[di];
       const dlgFiberKey = Object.keys(dlg).find(
-        (k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance"),
+        (k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance")
       );
-      if (dlgFiberKey) {
-        const queue = [dlg[dlgFiberKey]];
-        let steps = 0;
-        const visited = new Set();
-        while (queue.length && steps < 15000) {
-          const f = queue.shift();
-          steps += 1;
-          if (!f || visited.has(f)) continue;
-          visited.add(f);
-          const found = _findGrid16InFiber(f);
-          if (found) return found;
-          let c = f.child;
-          while (c) { queue.push(c); c = c.sibling; }
+      if (!dlgFiberKey) continue;
+
+      const queue = [dlg[dlgFiberKey]];
+      let steps = 0;
+      const visited = new Set();
+      while (queue.length && steps < 15000) {
+        const f = queue.shift();
+        steps += 1;
+        if (!f || visited.has(f)) continue;
+        visited.add(f);
+        const found = _findGrid16InFiber(f);
+        if (found) {
+          console.log("%c[SFL Bridge] 🎯 Tìm thấy 16 ô Captcha qua BFS Portal Tree!", "color: #00e676; font-weight: bold;");
+          return found;
+        }
+        let c = f.child;
+        while (c) {
+          queue.push(c);
+          c = c.sibling;
         }
       }
     }

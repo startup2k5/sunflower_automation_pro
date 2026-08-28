@@ -212,13 +212,13 @@
           }
         }
 
-        // 1. Kiểm tra và giải Captcha trước mỗi bước
-        if (typeof S.isCaptchaOpen === "function" && S.isCaptchaOpen()) {
-          console.log("%c[SFL Điều Phối] 🚨 Gặp Captcha! Tạm dừng để giải ngay...", "color: #ff3838; font-weight: bold;");
+        // 1. Kiểm tra và giải Captcha trước mỗi bước (ĐÓNG BĂNG TUYỆT ĐỐI, KHÔNG ĐƯỢC CHUYỂN LUỒNG)
+        while (typeof S.isCaptchaOpen === "function" && S.isCaptchaOpen()) {
+          console.log("%c[SFL Điều Phối] 🚨 Đang có Captcha trên màn hình! Đóng băng hệ thống để tập trung giải...", "color: #ff3838; font-weight: bold; font-size: 13px;");
           if (typeof S.kiemTraVaGiaiCaptcha === "function") {
             await S.kiemTraVaGiaiCaptcha();
           }
-          await ngu(500);
+          await ngu(800);
         }
 
         // 2. Kiểm tra Goblin Swarm
@@ -242,23 +242,26 @@
           console.error(`[SFL Điều Phối] Lỗi trong bước ${luongObj.ten}:`, err);
         }
 
-        // 5. Nếu bị ngắt bởi Captcha trong lúc thực thi
+        // 5. Nếu bị ngắt bởi Captcha trong lúc thực thi hoặc sau bước:
+        // ĐÓNG BĂNG VÀ GIẢI ĐẾN KHI XONG, RỒI TIẾP TỤC QUAY LẠI CHẠY TIẾP CHÍNH LUỒNG ĐÓ TỪ CHỖ DỪNG!
         if (S.__captchaInterrupted || (typeof S.isCaptchaOpen === "function" && S.isCaptchaOpen())) {
-          console.log(`%c[SFL Điều Phối] 🚨 Bị ngắt bởi Captcha! Đợi giải xong trước khi đi tiếp...`, "color: #ff9800; font-weight: bold;");
-          if (typeof S.kiemTraVaGiaiCaptcha === "function") {
-            await S.kiemTraVaGiaiCaptcha();
+          while (S.__captchaInterrupted || (typeof S.isCaptchaOpen === "function" && S.isCaptchaOpen())) {
+            console.log(`%c[SFL Điều Phối] 🚨 Bị ngắt bởi Captcha ở [BƯỚC ${i + 1}: ${luongObj.ten}]! Đóng băng mọi luồng để tập trung giải...`, "color: #ff9800; font-weight: bold;");
+            if (typeof S.kiemTraVaGiaiCaptcha === "function") {
+              await S.kiemTraVaGiaiCaptcha();
+            }
+            await ngu(800);
+            if (typeof S.isCaptchaOpen === "function" && !S.isCaptchaOpen()) {
+              S.__captchaInterrupted = false;
+              break;
+            }
           }
-          await ngu(500);
-          await donDepPopupGiuaCacBuoc();
 
-          // KHI GIẢI XONG CAPTCHA -> TIẾP TỤC QUAY LẠI CHÍNH LUỒNG ĐÓ!
-          if (!S.isCaptchaOpen || !S.isCaptchaOpen()) {
-            console.log(`%c[SFL Điều Phối] 🔄 Đã giải xong Captcha! TIẾP TỤC QUAY LẠI HOÀN THÀNH LUỒNG: ${luongObj.ten.toUpperCase()}`, "color: #00e676; font-weight: bold; font-size: 13px;");
-            S.__captchaInterrupted = false;
-            i--; // Giảm i để vòng lặp for chạy lại chính bước này
-            await ngu(1000);
-            continue;
-          }
+          console.log(`%c[SFL Điều Phối] 🔄 ĐÃ GIẢI XONG CAPTCHA! TIẾP TỤC QUAY LẠI HOÀN THÀNH LUỒNG: ${luongObj.ten.toUpperCase()} TỪ CHỖ DỪNG...`, "color: #00e676; font-weight: bold; font-size: 13px;");
+          await donDepPopupGiuaCacBuoc();
+          i--; // Giảm i để vòng lặp for chạy lại chính bước này
+          await ngu(800);
+          continue;
         }
 
         console.log(`[SFL Điều Phối] ✔️ [BƯỚC ${i + 1}/${CAC_LUONG.length}] XONG: ${luongObj.ten}`);
