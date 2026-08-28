@@ -54,12 +54,17 @@
     if (!el || !xemPhanTuRanh(el)) return false;
     const src = (el.src || el.getAttribute?.("src") || "").toLowerCase();
     const alt = (el.alt || el.getAttribute?.("alt") || "").toLowerCase();
+
+    const pText = (el.parentElement?.textContent || el.closest?.("div, button, [role='button']")?.textContent || "").toLowerCase();
+    if (pText.includes("vip") || src.includes("vip")) return false;
+    if (el.closest?.('[class*="vip"], [id*="vip"], [data-name*="vip"]')) return false;
+
     if (src.includes("compost") || src.includes("closed") || src.includes("building") || src.includes("island")) {
       return false;
     }
     const laAnhClose = src.includes("/ui/close") || src.includes("/icons/close") || src.includes("close.png") || src.includes("cancel.png") || alt === "close" || alt === "cancel";
     const laAriaClose = el.getAttribute?.("aria-label") === "close";
-    const trongDialog = !!el.closest?.('[role="dialog"], [role="modal"], div[class*="modal"], div[style*="dark_border"], .scrollable');
+    const trongDialog = !!el.closest?.('[role="dialog"], [role="modal"], div[class*="modal"], .fixed.inset-0');
     return (laAnhClose || laAriaClose) && trongDialog;
   }
 
@@ -73,7 +78,7 @@
         const cacAnhClose = doc.querySelectorAll('img[src*="/ui/close"], img[src*="close.png"], img[src*="cancel.png"], button[aria-label="close"]');
         for (const img of cacAnhClose) {
           if (!laNutCloseChuan(img)) continue;
-          const nut = img.closest("button, [role='button'], div.cursor-pointer, [class*='cursor-pointer']") || img;
+          const nut = img.closest("button, [role='button']") || img;
           clickTam(nut);
           coPopupDong = true;
           await ngu(150);

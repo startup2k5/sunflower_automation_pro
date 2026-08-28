@@ -77,17 +77,33 @@
   }
   S.isGoblinSwarm = isGoblinSwarm;
 
+  // Tự động tắt vĩnh viễn banner "VIP expired" của game trong localStorage
+  try {
+    localStorage.setItem("vipExpiryAcknowledged", new Date(Date.now() + 86400000 * 365).toISOString());
+  } catch (_e) {}
+
   function laNutCloseChuan(el) {
     if (!el || !xemPhanTuRanh(el)) return false;
     const src = (el.src || el.getAttribute?.("src") || "").toLowerCase();
     const alt = (el.alt || el.getAttribute?.("alt") || "").toLowerCase();
+
+    // TUYỆT ĐỐI BỎ QUA MỌI THỨ LIÊN QUAN ĐẾN VIP (TRÁNH BẤM MUA VIP)
+    const pText = (el.parentElement?.textContent || el.closest?.("div, button, [role='button']")?.textContent || "").toLowerCase();
+    if (pText.includes("vip") || src.includes("vip")) {
+      return false;
+    }
+    const vipContainer = el.closest?.('[class*="vip"], [id*="vip"], [data-name*="vip"]');
+    if (vipContainer) return false;
+
     // TUYỆT ĐỐI KHÔNG ĐƯỢC NHẬN NHẦM THÙNG COMPOST CLOSED HOẶC ĐỒ TRÊN ĐẢO!
     if (src.includes("compost") || src.includes("closed") || src.includes("building") || src.includes("island")) {
       return false;
     }
     const laAnhClose = src.includes("/ui/close") || src.includes("/icons/close") || src.includes("close.png") || src.includes("cancel.png") || alt === "close" || alt === "cancel";
     const laAriaClose = el.getAttribute?.("aria-label") === "close";
-    const trongDialog = !!el.closest?.('[role="dialog"], [role="modal"], div[class*="modal"], div[style*="dark_border"], .scrollable');
+
+    // Phải nằm trong modal/dialog thực sự (loại trừ các panel HUD trên màn hình như widget VIP)
+    const trongDialog = !!el.closest?.('[role="dialog"], [role="modal"], div[class*="modal"], .fixed.inset-0');
     return (laAnhClose || laAriaClose) && trongDialog;
   }
 
@@ -101,8 +117,11 @@
         const cacAnhClose = doc.querySelectorAll('img[src*="/ui/close"], img[src*="close.png"], img[src*="cancel.png"], button[aria-label="close"]');
         for (const img of cacAnhClose) {
           if (!laNutCloseChuan(img)) continue;
-          const btn = img.closest("button, [role='button'], div[class*='cursor-pointer']") || img;
-          try { btn.click(); } catch (_e) {}
+          // Chỉ click button hoặc chính thẻ img close, KHÔNG click div.cursor-pointer cha tránh kích hoạt nội dung bên trong
+          const btn = img.closest("button, [role='button']") || img;
+          try {
+            btn.click();
+          } catch (_e) {}
           daDong = true;
           await ngu(200);
           break;

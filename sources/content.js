@@ -27,4 +27,9 @@ window.SFL = window.SFL || {};
     });
   } catch (_e) {}
 
+  // Tự động tắt thông báo "VIP expired" của game trong localStorage (ngăn game hiển thị widget VIP gây click nhầm)
+  try {
+    localStorage.setItem("vipExpiryAcknowledged", new Date(Date.now() + 86400000 * 365).toISOString());
+  } catch (_e) {}
+
 })(window.SFL = window.SFL || {});

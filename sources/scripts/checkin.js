@@ -139,21 +139,25 @@
     return true;
   }
 
-  // Đóng modal / popup nếu đang mở
+  // Đóng modal / popup nếu đang mở (loại trừ các thành phần VIP)
   async function dongModal(doc) {
+    if (!doc || !doc.body) return;
     const cacAnhClose = doc.querySelectorAll('img[src*="close"], img[src*="cancel"]');
     for (const img of cacAnhClose) {
       if (xemPhanTuRanh(img)) {
-        const nut = img.closest("button, [role='button'], div.cursor-pointer") || img;
+        const pText = (img.parentElement?.textContent || img.closest("div, button")?.textContent || "").toLowerCase();
+        if (pText.includes("vip") || (img.src || "").toLowerCase().includes("vip")) continue;
+        const nut = img.closest("button, [role='button']") || img;
         clickTam(nut);
         await ngu(300);
         return;
       }
     }
-    const cacNut = doc.querySelectorAll("button, [role='button'], div.cursor-pointer");
+    const cacNut = doc.querySelectorAll("button, [role='button']");
     for (const btn of cacNut) {
       if (!xemPhanTuRanh(btn)) continue;
       const txt = (btn.textContent || "").trim().toLowerCase();
+      if (txt.includes("vip")) continue;
       if (txt === "close" || txt === "đóng" || txt === "ok" || txt === "x") {
         clickTam(btn);
         await ngu(300);
