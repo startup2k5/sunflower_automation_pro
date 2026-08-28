@@ -87,7 +87,25 @@ const FEATURES = [
     id: 13,
     icon: "📦",
     title: "Tự động Giao Đơn Hàng Tàu/NPC (Deliveries)",
-    default: false
+    default: true
+  },
+  {
+    id: 16,
+    icon: "🎯",
+    title: "Tự động Giao Bounties Poppy (Plaza Board)",
+    default: true
+  },
+  {
+    id: 17,
+    icon: "📋",
+    title: "Tự động Nhận Thưởng Nhiệm Vụ Tuần (Weekly Chores)",
+    default: true
+  },
+  {
+    id: 18,
+    icon: "🏆",
+    title: "Tự động Nhận Thưởng Mốc Tháng (Season Milestones)",
+    default: true
   }
 ];
 
