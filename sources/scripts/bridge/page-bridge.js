@@ -1325,6 +1325,178 @@
       return;
     }
 
+    if (data.type === "SFL_BUY_SEASONAL_SEEDS") {
+      const svc = findGameService();
+      let ok = false;
+      let error = null;
+      const boughtList = [];
+      let totalCoinsSpent = 0;
+      let remainingCoins = 0;
+
+      if (svc) {
+        try {
+          const state = svc.state?.context?.state;
+          const coins = toSafeNumber(state?.coins);
+          remainingCoins = coins;
+          const stock = state?.stock || {};
+          const inventory = state?.inventory || {};
+          const season = (state?.season?.season || "spring").toLowerCase();
+          const collectibles = state?.collectibles || {};
+
+          // Danh mục tất cả hạt giống trong game kèm giá gốc, loại và điểm trồng
+          const ALL_SEEDS_CATALOG = [
+            // Crops
+            { name: "Sunflower Seed", price: 0.01, category: "Crop", level: 1, spot: "Crop Plot" },
+            { name: "Potato Seed", price: 0.1, category: "Crop", level: 1, spot: "Crop Plot" },
+            { name: "Rhubarb Seed", price: 0.15, category: "Crop", level: 1, spot: "Crop Plot" },
+            { name: "Pumpkin Seed", price: 0.2, category: "Crop", level: 2, spot: "Crop Plot" },
+            { name: "Zucchini Seed", price: 0.2, category: "Crop", level: 2, spot: "Crop Plot" },
+            { name: "Carrot Seed", price: 0.5, category: "Crop", level: 2, spot: "Crop Plot" },
+            { name: "Yam Seed", price: 0.5, category: "Crop", level: 2, spot: "Crop Plot" },
+            { name: "Cabbage Seed", price: 1, category: "Crop", level: 3, spot: "Crop Plot" },
+            { name: "Broccoli Seed", price: 1, category: "Crop", level: 3, spot: "Crop Plot" },
+            { name: "Soybean Seed", price: 1.5, category: "Crop", level: 3, spot: "Crop Plot" },
+            { name: "Beetroot Seed", price: 2, category: "Crop", level: 3, spot: "Crop Plot" },
+            { name: "Pepper Seed", price: 2, category: "Crop", level: 3, spot: "Crop Plot" },
+            { name: "Cauliflower Seed", price: 3, category: "Crop", level: 4, spot: "Crop Plot" },
+            { name: "Parsnip Seed", price: 5, category: "Crop", level: 4, spot: "Crop Plot" },
+            { name: "Eggplant Seed", price: 6, category: "Crop", level: 5, spot: "Crop Plot" },
+            { name: "Corn Seed", price: 7, category: "Crop", level: 5, spot: "Crop Plot" },
+            { name: "Onion Seed", price: 7, category: "Crop", level: 5, spot: "Crop Plot" },
+            { name: "Radish Seed", price: 7, category: "Crop", level: 5, spot: "Crop Plot" },
+            { name: "Wheat Seed", price: 9, category: "Crop", level: 5, spot: "Crop Plot" },
+            { name: "Turnip Seed", price: 9, category: "Crop", level: 5, spot: "Crop Plot" },
+            { name: "Kale Seed", price: 10, category: "Crop", level: 6, spot: "Crop Plot" },
+            { name: "Artichoke Seed", price: 12, category: "Crop", level: 6, spot: "Crop Plot" },
+            { name: "Barley Seed", price: 15, category: "Crop", level: 6, spot: "Crop Plot" },
+
+            // Fruits (Hoa quả)
+            { name: "Tomato Seed", price: 5, category: "Fruit", level: 13, spot: "Fruit Patch" },
+            { name: "Lemon Seed", price: 15, category: "Fruit", level: 12, spot: "Fruit Patch" },
+            { name: "Blueberry Seed", price: 30, category: "Fruit", level: 13, spot: "Fruit Patch" },
+            { name: "Orange Seed", price: 50, category: "Fruit", level: 14, spot: "Fruit Patch" },
+            { name: "Apple Seed", price: 70, category: "Fruit", level: 15, spot: "Fruit Patch" },
+            { name: "Banana Plant", price: 70, category: "Fruit", level: 16, spot: "Fruit Patch" },
+
+            // Flowers (Hoa)
+            { name: "Sunpetal Seed", price: 16, category: "Flower", level: 13, spot: "Flower Bed" },
+            { name: "Bloom Seed", price: 32, category: "Flower", level: 22, spot: "Flower Bed" },
+            { name: "Lily Seed", price: 48, category: "Flower", level: 27, spot: "Flower Bed" },
+            { name: "Edelweiss Seed", price: 96, category: "Flower", level: 35, spot: "Flower Bed" },
+            { name: "Gladiolus Seed", price: 96, category: "Flower", level: 35, spot: "Flower Bed" },
+            { name: "Lavender Seed", price: 96, category: "Flower", level: 35, spot: "Flower Bed" },
+            { name: "Clover Seed", price: 96, category: "Flower", level: 35, spot: "Flower Bed" },
+
+            // Greenhouse
+            { name: "Olive Seed", price: 160, category: "Greenhouse", level: 40, spot: "Greenhouse" },
+            { name: "Rice Seed", price: 160, category: "Greenhouse", level: 40, spot: "Greenhouse" },
+            { name: "Grape Seed", price: 320, category: "Greenhouse", level: 40, spot: "Greenhouse" },
+          ];
+
+          // Danh sách hạt giống được phép theo từng mùa vụ
+          const SEASONAL_SEEDS_MAP = {
+            spring: [
+              "Sunflower Seed", "Rhubarb Seed", "Carrot Seed", "Cabbage Seed", "Soybean Seed", "Corn Seed", "Wheat Seed", "Kale Seed", "Barley Seed",
+              "Tomato Seed", "Blueberry Seed", "Orange Seed",
+              "Sunpetal Seed", "Bloom Seed", "Lily Seed", "Lavender Seed",
+              "Rice Seed", "Olive Seed", "Grape Seed"
+            ],
+            summer: [
+              "Sunflower Seed", "Potato Seed", "Zucchini Seed", "Pepper Seed", "Beetroot Seed", "Cauliflower Seed", "Eggplant Seed", "Radish Seed", "Wheat Seed",
+              "Lemon Seed", "Orange Seed", "Banana Plant",
+              "Sunpetal Seed", "Bloom Seed", "Lily Seed", "Gladiolus Seed",
+              "Rice Seed", "Olive Seed", "Grape Seed"
+            ],
+            autumn: [
+              "Potato Seed", "Pumpkin Seed", "Carrot Seed", "Yam Seed", "Broccoli Seed", "Soybean Seed", "Wheat Seed", "Barley Seed", "Artichoke Seed",
+              "Tomato Seed", "Apple Seed", "Banana Plant",
+              "Sunpetal Seed", "Bloom Seed", "Lily Seed", "Clover Seed",
+              "Rice Seed", "Olive Seed", "Grape Seed"
+            ],
+            winter: [
+              "Potato Seed", "Cabbage Seed", "Beetroot Seed", "Cauliflower Seed", "Parsnip Seed", "Onion Seed", "Turnip Seed", "Wheat Seed", "Kale Seed",
+              "Lemon Seed", "Blueberry Seed", "Apple Seed",
+              "Sunpetal Seed", "Bloom Seed", "Lily Seed", "Edelweiss Seed",
+              "Rice Seed", "Olive Seed", "Grape Seed"
+            ],
+          };
+
+          const allowedNames = SEASONAL_SEEDS_MAP[season] || SEASONAL_SEEDS_MAP.spring;
+          // Lọc danh sách hạt giống đúng mùa và sắp xếp TỪ RẺ ĐẾN ĐẮT (price ASCENDING)
+          const seasonalCandidates = ALL_SEEDS_CATALOG
+            .filter((s) => allowedNames.includes(s.name))
+            .sort((a, b) => a.price - b.price);
+
+          const hasKuebiko = !!(collectibles["Kuebiko"] && collectibles["Kuebiko"].length);
+          const hasHungryCaterpillar = !!(collectibles["Hungry Caterpillar"] && collectibles["Hungry Caterpillar"].length);
+
+          for (const s of seasonalCandidates) {
+            // 1. Kiểm tra stock trong cửa hàng
+            const stockQty = toSafeNumber(stock[s.name]);
+            if (stockQty <= 0) continue;
+
+            // 2. Tính đơn giá sau chiết khấu/boosts
+            let unitPrice = s.price;
+            if (hasKuebiko) unitPrice = 0;
+            if (s.category === "Flower" && hasHungryCaterpillar) unitPrice = 0;
+
+            // 3. Tính số lượng tối đa có thể mua (dựa trên coins và stock)
+            let maxBuy = stockQty;
+            if (unitPrice > 0) {
+              const affordable = Math.floor(remainingCoins / unitPrice);
+              maxBuy = Math.min(maxBuy, affordable);
+            }
+
+            // 4. Giới hạn theo sức chứa kho đồ (tối đa 400 hạt giống)
+            const currentInv = toSafeNumber(inventory[s.name]);
+            const headroom = Math.max(0, 400 - currentInv);
+            maxBuy = Math.min(maxBuy, headroom);
+
+            if (maxBuy <= 0) continue;
+
+            try {
+              svc.send({
+                type: "seed.bought",
+                item: s.name,
+                amount: maxBuy,
+              });
+              const cost = maxBuy * unitPrice;
+              remainingCoins = Math.max(0, remainingCoins - cost);
+              totalCoinsSpent += cost;
+              boughtList.push({
+                seed: s.name,
+                category: s.category,
+                amount: maxBuy,
+                unitPrice: unitPrice,
+                totalCost: cost,
+              });
+            } catch (_e) {}
+          }
+
+          if (boughtList.length > 0) {
+            try { svc.send({ type: "SAVE" }); } catch (_e) {}
+            ok = true;
+          }
+        } catch (e) {
+          error = e?.message || String(e);
+        }
+      } else {
+        error = "no_service";
+      }
+
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_BUY_SEASONAL_SEEDS_RESULT",
+        reqId: data.reqId,
+        ok,
+        error,
+        boughtList,
+        totalCoinsSpent,
+        remainingCoins,
+      }, "*");
+      return;
+    }
+
     // DANH SÁCH TOÀN BỘ CÔNG THỨC MÓN ĂN & ĐIỂM EXP & NGUYÊN LIỆU GỐC
     const ALL_COOKABLE_RECIPES = [
       { name: "Pizza Margherita", building: "Fire Pit", experience: 25000, ingredients: { Tomato: 30, Cheese: 5, Wheat: 20 } },

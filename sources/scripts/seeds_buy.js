@@ -337,7 +337,7 @@
     return hopLe[0];
   }
 
-  // ═══════ QUY TRÌNH MUA HẠT GIỐNG TẠI CỬA HÀNG BETTY (CHUẨN V4) ═══════
+  // ═══════ QUY TRÌNH MUA HẠT GIỐNG QUA GAME BRIDGE (SIÊU TỐC KHÔNG DÙNG DOM) ═══════
   // CHỈ CHẠY 1 LẦN DUY NHẤT Ở VÒNG 1, TỪ VÒNG 2 BỎ QUA CHO ĐẾN KHI TẢI LẠI TRANG
   async function tickSeedsBuy(force = false) {
     if (dangBan) return false;
@@ -358,8 +358,39 @@
         return false;
       }
 
-      console.log("%c[SFL Mua Hạt Giống] 🌻 Bắt đầu luồng mua hạt giống tại cửa hàng Betty (Chuẩn v4)...", "color: #ff9800; font-weight: bold;");
+      console.log("%c[SFL Mua Hạt Giống] 🌻 Bắt đầu luồng mua hạt giống tự động qua Game Bridge (không dùng DOM)...", "color: #ff9800; font-weight: bold; font-size: 13px;");
 
+      // ── 1. ƯU TIÊN 100% GAME BRIDGE (MUA TOÀN BỘ CROPS + FRUITS + FLOWERS + GREENHOUSE TỪ RẺ ĐẾN ĐẮT) ──
+      if (typeof S.buySeasonalSeedsBridge === "function") {
+        const res = await S.buySeasonalSeedsBridge(5000);
+        if (res && res.ok) {
+          const list = res.boughtList || [];
+          if (list.length > 0) {
+            console.log(
+              `%c[SFL Mua Hạt Giống] 🎉 ĐÃ MUA THÀNH CÔNG ${list.length} LOẠI HẠT GIỐNG ĐÚNG MÙA QUA GAME BRIDGE! (Đã chi: ${res.totalCoinsSpent.toLocaleString()} Coins | Còn lại: ${res.remainingCoins?.toLocaleString()} Coins)`,
+              "color: #00e676; font-weight: bold; font-size: 14px;"
+            );
+            console.table(
+              list.map((b) => ({
+                "Hạt Giống": b.seed,
+                "Phân Loại": b.category,
+                "Số Lượng": `+${b.amount}`,
+                "Đơn Giá": `${b.unitPrice} Coins`,
+                "Tổng Chi": `${b.totalCost.toLocaleString()} Coins`,
+              }))
+            );
+          } else {
+            console.log(
+              "%c[SFL Mua Hạt Giống] ℹ️ Kho hạt giống đã đủ định mức hoặc cửa hàng tạm thời hết hàng / không đủ tiền mua thêm.",
+              "color: #4caf50; font-weight: bold;"
+            );
+          }
+          return true;
+        }
+      }
+
+      // ── 2. FALLBACK DOM NẾU BRIDGE CHƯA KẾT NỐI ──
+      console.log("[SFL Mua Hạt Giống] ⚠️ Game Bridge chưa sẵn sàng, chuyển sang Fallback DOM...");
       let modalInfo = timModalBetty();
       if (!modalInfo) {
         const shop = timCuaHangBetty();

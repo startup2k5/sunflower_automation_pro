@@ -11,12 +11,39 @@
   let dangBan = false;
   const ngu = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  // Danh sách hạt giống cho đất thường theo 4 Mùa
+  // BẢNG THỜI GIAN PHÁT TRIỂN CỦA CÂY TRỒNG (TÍNH BẰNG GIÂY) - SẮP XẾP TỪ NGẮN NGÀY ĐẾN DÀI NGÀY
+  const CROP_GROWTH_SECONDS = {
+    "Sunflower Seed": 60,            // 1 phút (ngắn nhất)
+    "Potato Seed": 300,             // 5 phút
+    "Rhubarb Seed": 600,            // 10 phút
+    "Pumpkin Seed": 1800,           // 30 phút
+    "Zucchini Seed": 1800,          // 30 phút
+    "Carrot Seed": 3600,            // 1 giờ
+    "Yam Seed": 3600,               // 1 giờ
+    "Cabbage Seed": 7200,           // 2 giờ
+    "Broccoli Seed": 7200,          // 2 giờ
+    "Soybean Seed": 10800,          // 3 giờ
+    "Beetroot Seed": 14400,         // 4 giờ
+    "Pepper Seed": 14400,           // 4 giờ
+    "Cauliflower Seed": 28800,      // 8 giờ
+    "Parsnip Seed": 43200,          // 12 giờ
+    "Eggplant Seed": 57600,         // 16 giờ
+    "Corn Seed": 72000,             // 20 giờ
+    "Onion Seed": 72000,            // 20 giờ
+    "Radish Seed": 86400,           // 24 giờ
+    "Wheat Seed": 86400,            // 24 giờ
+    "Turnip Seed": 86400,           // 24 giờ
+    "Kale Seed": 129600,            // 36 giờ
+    "Artichoke Seed": 129600,       // 36 giờ
+    "Barley Seed": 172800,          // 48 giờ (dài nhất)
+  };
+
+  // Danh sách hạt giống cho đất thường theo 4 Mùa - Ưu tiên tăng dần từ ngắn ngày đến dài ngày
   const SEASONAL_CROP_PLOT_SEEDS = {
-    spring: ["Sunflower Seed", "Potato Seed", "Rhubarb Seed", "Carrot Seed", "Cabbage Seed", "Soybean Seed"],
-    summer: ["Sunflower Seed", "Potato Seed", "Pepper Seed", "Corn Seed", "Zucchini Seed", "Soybean Seed"],
-    autumn: ["Sunflower Seed", "Potato Seed", "Pumpkin Seed", "Carrot Seed", "Broccoli Seed", "Beetroot Seed"],
-    winter: ["Sunflower Seed", "Potato Seed", "Yam Seed", "Beetroot Seed", "Cauliflower Seed", "Parsnip Seed", "Wheat Seed", "Kale Seed", "Barley Seed"],
+    spring: ["Sunflower Seed", "Rhubarb Seed", "Carrot Seed", "Cabbage Seed", "Soybean Seed", "Corn Seed", "Wheat Seed", "Kale Seed", "Barley Seed"],
+    summer: ["Sunflower Seed", "Potato Seed", "Zucchini Seed", "Pepper Seed", "Beetroot Seed", "Cauliflower Seed", "Eggplant Seed", "Radish Seed", "Wheat Seed"],
+    autumn: ["Sunflower Seed", "Potato Seed", "Pumpkin Seed", "Carrot Seed", "Yam Seed", "Broccoli Seed", "Soybean Seed", "Wheat Seed", "Barley Seed", "Artichoke Seed"],
+    winter: ["Sunflower Seed", "Potato Seed", "Cabbage Seed", "Beetroot Seed", "Cauliflower Seed", "Parsnip Seed", "Onion Seed", "Turnip Seed", "Wheat Seed", "Kale Seed"],
   };
 
   const CROP_SLUGS = {
@@ -404,26 +431,37 @@
       const seedsCuaMua = SEASONAL_CROP_PLOT_SEEDS[season] || SEASONAL_CROP_PLOT_SEEDS.spring;
       const inv = state?.inventory || S.userData?.inventory || {};
 
-      // Tìm loại hạt giống mùa có số lượng > 0
-      let tenHatChon = null;
-      let soLuongHat = 0;
+      // ƯU TIÊN HẠT GIỐNG NGẮN NGÀY TRƯỚC RỒI ĐẾN DÀI NGÀY (CROP_GROWTH_SECONDS TĂNG DẦN)
+      const danhSachHatKhaDung = [];
       for (const seedName of seedsCuaMua) {
-        if ((inv[seedName] || 0) > 0) {
-          tenHatChon = seedName;
-          soLuongHat = inv[seedName];
-          break;
+        const sl = Number(inv[seedName] || 0);
+        if (sl > 0) {
+          danhSachHatKhaDung.push({
+            name: seedName,
+            amount: sl,
+            seconds: CROP_GROWTH_SECONDS[seedName] || 999999,
+          });
         }
       }
 
-      // Fallback bất kỳ hạt giống nào trong kho
+      // Sắp xếp hạt giống theo thời gian trồng ngắn ngày nhất đến dài ngày nhất
+      danhSachHatKhaDung.sort((a, b) => a.seconds - b.seconds);
+
+      let tenHatChon = danhSachHatKhaDung[0]?.name || null;
+      let soLuongHat = danhSachHatKhaDung[0]?.amount || 0;
+
+      // Fallback bất kỳ hạt giống nào trong kho (nếu không có hạt mùa vụ), cũng xếp ngắn ngày -> dài ngày
       if (!tenHatChon) {
+        const fallbackCandidates = [];
         for (const [k, v] of Object.entries(inv)) {
-          if (k.endsWith(" Seed") && v > 0) {
-            tenHatChon = k;
-            soLuongHat = v;
-            break;
+          const count = Number(v || 0);
+          if (k.endsWith(" Seed") && count > 0 && CROP_GROWTH_SECONDS[k] !== undefined) {
+            fallbackCandidates.push({ name: k, amount: count, seconds: CROP_GROWTH_SECONDS[k] });
           }
         }
+        fallbackCandidates.sort((a, b) => a.seconds - b.seconds);
+        tenHatChon = fallbackCandidates[0]?.name || null;
+        soLuongHat = fallbackCandidates[0]?.amount || 0;
       }
 
       if (!tenHatChon || soLuongHat <= 0) {
@@ -438,7 +476,7 @@
         return false;
       }
 
-      console.log(`%c[SFL Trồng Ruộng] 🌾 Bắt đầu gieo hạt ${hatInfo.tenHat} cho ${danhSachRuong.length} ô ruộng trống...`, "color: #4caf50; font-weight: bold; font-size: 13px;");
+      console.log(`%c[SFL Trồng Ruộng] 🌾 Bắt đầu gieo hạt "${hatInfo.tenHat}" (Ngắn ngày nhất) cho ${danhSachRuong.length} ô ruộng trống...`, "color: #4caf50; font-weight: bold; font-size: 13px;");
 
       let soHatConLai = hatInfo.soLuong;
       let daTrong = 0;
@@ -461,25 +499,37 @@
         }
 
         if (soHatConLai <= 0) {
-          console.log(`[SFL Trồng Ruộng] 🔄 Hết loại hạt hiện tại, tìm tiếp loại hạt khác...`);
+          console.log(`[SFL Trồng Ruộng] 🔄 Hết loại hạt hiện tại, tìm tiếp loại hạt ngắn ngày kế tiếp...`);
           let tenHatTiep = null;
           let soLuongTiep = 0;
+
+          // Lọc các hạt giống khác còn trong kho và sắp xếp tiếp từ ngắn ngày đến dài ngày
+          const tiepCandidates = [];
           for (const sName of seedsCuaMua) {
-            if (sName !== hatInfo.tenHat && (inv[sName] || 0) > 0) {
-              tenHatTiep = sName;
-              soLuongTiep = inv[sName];
-              break;
+            if (sName !== hatInfo.tenHat && Number(inv[sName] || 0) > 0) {
+              tiepCandidates.push({ name: sName, amount: Number(inv[sName]), seconds: CROP_GROWTH_SECONDS[sName] || 999999 });
             }
           }
-          if (!tenHatTiep) {
+          tiepCandidates.sort((a, b) => a.seconds - b.seconds);
+
+          if (tiepCandidates.length > 0) {
+            tenHatTiep = tiepCandidates[0].name;
+            soLuongTiep = tiepCandidates[0].amount;
+          } else {
+            // Fallback hạt giống khác ngoài mùa
+            const fallbackTiep = [];
             for (const [k, v] of Object.entries(inv)) {
-              if (k.endsWith(" Seed") && k !== hatInfo.tenHat && v > 0) {
-                tenHatTiep = k;
-                soLuongTiep = v;
-                break;
+              if (k.endsWith(" Seed") && k !== hatInfo.tenHat && Number(v || 0) > 0 && CROP_GROWTH_SECONDS[k] !== undefined) {
+                fallbackTiep.push({ name: k, amount: Number(v), seconds: CROP_GROWTH_SECONDS[k] });
               }
             }
+            fallbackTiep.sort((a, b) => a.seconds - b.seconds);
+            if (fallbackTiep.length > 0) {
+              tenHatTiep = fallbackTiep[0].name;
+              soLuongTiep = fallbackTiep[0].amount;
+            }
           }
+
           if (!tenHatTiep) {
             console.log(`[SFL Trồng Ruộng] ℹ️ Đã hết toàn bộ hạt giống trong kho.`);
             break;
