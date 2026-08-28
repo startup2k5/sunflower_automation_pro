@@ -748,6 +748,66 @@
   }
   S.deliverOrdersBridge = deliverOrdersBridge;
 
+  // Tự động nhận thưởng nhiệm vụ tuần (Weekly Chores & Kingdom Chores) qua Game Bridge
+  function claimChoresBridge(timeoutMs = 3000) {
+    return new Promise((resolve) => {
+      const reqId = "chore_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+      let timer = null;
+
+      function onMsg(ev) {
+        if (ev.source !== window || !ev.data || ev.data._sfl !== true) return;
+        if (ev.data.type === "SFL_CLAIM_CHORES_RESULT" && ev.data.reqId === reqId) {
+          clearTimeout(timer);
+          window.removeEventListener("message", onMsg);
+          resolve(ev.data);
+        }
+      }
+
+      timer = setTimeout(() => {
+        window.removeEventListener("message", onMsg);
+        resolve({ ok: false, error: "timeout", claimedCount: 0, claimedChores: [] });
+      }, timeoutMs);
+
+      window.addEventListener("message", onMsg);
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_CLAIM_CHORES",
+        reqId: reqId,
+      }, "*");
+    });
+  }
+  S.claimChoresBridge = claimChoresBridge;
+
+  // Tự động giao hàng Bounties cho Poppy (Mega Bounty Board) qua Game Bridge
+  function sellBountiesBridge(timeoutMs = 4000) {
+    return new Promise((resolve) => {
+      const reqId = "bounty_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+      let timer = null;
+
+      function onMsg(ev) {
+        if (ev.source !== window || !ev.data || ev.data._sfl !== true) return;
+        if (ev.data.type === "SFL_SELL_BOUNTIES_POPPY_RESULT" && ev.data.reqId === reqId) {
+          clearTimeout(timer);
+          window.removeEventListener("message", onMsg);
+          resolve(ev.data);
+        }
+      }
+
+      timer = setTimeout(() => {
+        window.removeEventListener("message", onMsg);
+        resolve({ ok: false, error: "timeout", soldCount: 0, soldBounties: [], bonusClaimed: false });
+      }, timeoutMs);
+
+      window.addEventListener("message", onMsg);
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_SELL_BOUNTIES_POPPY",
+        reqId: reqId,
+      }, "*");
+    });
+  }
+  S.sellBountiesBridge = sellBountiesBridge;
+
   // Lắng nghe message từ page-bridge.js
   let daBaoBridgeReady = false;
   window.addEventListener("message", (event) => {

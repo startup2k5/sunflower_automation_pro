@@ -2689,6 +2689,24 @@
       return;
     }
 
+    // Danh sách các vật phẩm đắt đỏ / món quý cần tự động BỎ QUA trong giao hàng
+    const LUXURY_SKIP_ITEMS = new Set([
+      // Món ăn chế biến phức tạp
+      "Tofu Scramble", "Power Smoothie", "Bumpkin Ganoush", "Boiled Eggs", "Mushroom Soup",
+      "Bumpkin Broth", "Kale Stew", "Sunflower Cake", "Orange Cake", "Parsnip Cake",
+      "Honey Cake", "Honey Cheddar", "Pizza Margherita", "Antipasto", "Rice Bun",
+      "Beetroot Salad", "Cauliflower Burger", "Mushroom Salad", "Pancakes", "Roast Veggies",
+      "Club Sandwich", "Apple Pie", "Pumpkin Soup", "Fruit Salad", "Chowder", "Gumbo",
+      "Fermented Carrots", "Sauerkraut",
+      // Cá hiếm & đồ câu biển giá trị cao
+      "Tuna", "Squid", "Anchovy", "Crab Pot", "Mariner Pot", "Mahi Mahi", "Swordfish",
+      "Oarfish", "Whale", "Sea Horse", "Giant Squid", "Sunfish", "Coelacanth",
+      // Cổ vật & báu vật đào cát
+      "Hieroglyph", "Sand Shovel", "Pirate Bounty", "Camel Bone", "Cockle Shell", "Pipi Shell", "Clam Shell",
+      // Búp bê chế tạo đặc biệt
+      "Cluck Doll", "Victoria Sister", "Goblin Doll"
+    ]);
+
     if (data.type === "SFL_DELIVER_ORDERS") {
       const svc = findGameService();
       let deliveredList = [];
@@ -2724,9 +2742,21 @@
             if (ord.readyAt && ord.readyAt > now) continue;
 
             const reqItems = ord.items || {};
-            let duNguyenLieu = true;
 
-            // Kiểm tra từng nguyên liệu yêu cầu
+            // 1. Tự động BỎ QUA các đơn yêu cầu món ăn đắt tiền / cá hiếm / cổ vật / tiêu hao quá nhiều quặng kim loại & Coins
+            const coVatPhamDatTien = Object.keys(reqItems).some(
+              (item) =>
+                LUXURY_SKIP_ITEMS.has(item) ||
+                (item === "coins" && Number(reqItems[item]) > 1000) ||
+                (item === "Gold" && Number(reqItems[item]) > 5) ||
+                (item === "Iron" && Number(reqItems[item]) > 15)
+            );
+            if (coVatPhamDatTien && !data.forceAll) {
+              continue;
+            }
+
+            // 2. Kiểm tra từng nguyên liệu yêu cầu
+            let duNguyenLieu = true;
             for (const [item, reqAmount] of Object.entries(reqItems)) {
               const numReq = Number(reqAmount || 0);
               if (numReq <= 0) continue;
@@ -2794,6 +2824,145 @@
         error,
         deliveredCount: deliveredList.length,
         deliveredList,
+      }, "*");
+      return;
+    }
+
+    // TỰ ĐỘNG NHẬN THƯỞNG NHIỆM VỤ TUẦN (WEEKLY CHORES & KINGDOM CHORES)
+    if (data.type === "SFL_CLAIM_CHORES") {
+      const svc = findGameService();
+      let ok = false;
+      let error = null;
+      const claimedChores = [];
+
+      if (svc) {
+        try {
+          const state = svc.state?.context?.state;
+          const choreBoard = state?.choreBoard?.chores || {};
+
+          // 1. Nhận thưởng NPC Chores / Weekly Chores
+          for (const npcName of Object.keys(choreBoard)) {
+            const chore = choreBoard[npcName];
+            if (!chore || chore.completedAt) continue;
+
+            try {
+              svc.send({
+                type: "chore.fulfilled",
+                npcName: npcName,
+              });
+              claimedChores.push({ type: "npc", name: npcName, choreName: chore.name || "Chore" });
+            } catch (_e) {}
+          }
+
+          // 2. Nhận thưởng Kingdom Chores
+          const kingdomChores = state?.kingdomChores?.chores || [];
+          for (const kChore of kingdomChores) {
+            if (!kChore || kChore.completedAt !== undefined || kChore.skippedAt !== undefined) continue;
+            try {
+              svc.send({
+                type: "kingdomChore.completed",
+                id: kChore.id,
+              });
+              claimedChores.push({ type: "kingdom", name: "Kingdom", choreName: kChore.activity || "Kingdom Chore" });
+            } catch (_e) {}
+          }
+
+          if (claimedChores.length > 0) {
+            try { svc.send({ type: "SAVE" }); } catch (_e) {}
+            ok = true;
+          }
+        } catch (e) {
+          error = e?.message || String(e);
+        }
+      } else {
+        error = "no_service";
+      }
+
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_CLAIM_CHORES_RESULT",
+        reqId: data.reqId,
+        ok,
+        error,
+        claimedCount: claimedChores.length,
+        claimedChores,
+      }, "*");
+      return;
+    }
+
+    // TỰ ĐỘNG GIAO HÀNG TRUY NÃ CHO POPPY (MEGA BOUNTY BOARD)
+    if (data.type === "SFL_SELL_BOUNTIES_POPPY") {
+      const svc = findGameService();
+      let ok = false;
+      let error = null;
+      const soldBounties = [];
+      let bonusClaimed = false;
+
+      if (svc) {
+        try {
+          const state = svc.state?.context?.state;
+          const inv = state?.inventory || {};
+          const requests = state?.bounties?.requests || [];
+
+          // Mô phỏng kho đồ
+          const invSim = {};
+          for (const [k, v] of Object.entries(inv)) {
+            invSim[k] = toSafeNumber(v);
+          }
+
+          for (const req of requests) {
+            if (!req || req.completed) continue;
+            const reqQty = Number(req.quantity || 1);
+            const inStock = Number(invSim[req.name] || 0);
+
+            if (inStock >= reqQty) {
+              try {
+                svc.send({
+                  type: "bounty.sold",
+                  requestId: req.id,
+                });
+                invSim[req.name] = Math.max(0, inStock - reqQty);
+                soldBounties.push({
+                  id: req.id,
+                  item: req.name,
+                  quantity: reqQty,
+                  coins: req.coins || 0,
+                });
+              } catch (errBounty) {
+                console.warn("[SFL Bridge Bounty Error]", req.name, errBounty);
+              }
+            }
+          }
+
+          // Kiểm tra và nhận Bounty Bonus nếu hoàn thành toàn bộ
+          const allDone = requests.length > 0 && requests.every((r) => r.completed || soldBounties.some((s) => s.id === r.id));
+          if (allDone && !state?.bounties?.bonusClaimed) {
+            try {
+              svc.send({ type: "bountyBonus.claimed" });
+              bonusClaimed = true;
+            } catch (_eBonus) {}
+          }
+
+          if (soldBounties.length > 0 || bonusClaimed) {
+            try { svc.send({ type: "SAVE" }); } catch (_e) {}
+            ok = true;
+          }
+        } catch (e) {
+          error = e?.message || String(e);
+        }
+      } else {
+        error = "no_service";
+      }
+
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_SELL_BOUNTIES_POPPY_RESULT",
+        reqId: data.reqId,
+        ok,
+        error,
+        soldCount: soldBounties.length,
+        soldBounties,
+        bonusClaimed,
       }, "*");
       return;
     }

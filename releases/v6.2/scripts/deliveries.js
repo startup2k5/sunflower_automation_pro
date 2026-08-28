@@ -1,13 +1,30 @@
 // ═══════════════════════════════════════════════════════════════════
 // LUỒNG TỰ ĐỘNG GIAO ĐƠN HÀNG TOÀN DIỆN v6.2 (deliveries.js)
 // HỖ TRỢ ĐỘC QUYỀN TÀI KHOẢN VIP (+2 TICKET THƯỞNG) & TÀI KHOẢN THƯỜNG
-// Tự động kiểm tra 100% nguyên liệu trong kho & Giao đơn qua Game Bridge siêu tốc
+// TỰ ĐỘNG BỎ QUA MÓN ĐẮT TIỀN / QUẶNG QUÝ — GIAO BOUNTIES POPPY & NHẬN THƯỞNG WEEKLY CHORES
 // ═══════════════════════════════════════════════════════════════════
 (function (S) {
   "use strict";
 
   let dangBan = false;
   const ngu = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const LUXURY_SKIP_ITEMS = new Set([
+    // Món ăn chế biến phức tạp
+    "Tofu Scramble", "Power Smoothie", "Bumpkin Ganoush", "Boiled Eggs", "Mushroom Soup",
+    "Bumpkin Broth", "Kale Stew", "Sunflower Cake", "Orange Cake", "Parsnip Cake",
+    "Honey Cake", "Honey Cheddar", "Pizza Margherita", "Antipasto", "Rice Bun",
+    "Beetroot Salad", "Cauliflower Burger", "Mushroom Salad", "Pancakes", "Roast Veggies",
+    "Club Sandwich", "Apple Pie", "Pumpkin Soup", "Fruit Salad", "Chowder", "Gumbo",
+    "Fermented Carrots", "Sauerkraut",
+    // Cá hiếm & đồ câu biển giá trị cao
+    "Tuna", "Squid", "Anchovy", "Crab Pot", "Mariner Pot", "Mahi Mahi", "Swordfish",
+    "Oarfish", "Whale", "Sea Horse", "Giant Squid", "Sunfish", "Coelacanth",
+    // Cổ vật & báu vật đào cát
+    "Hieroglyph", "Sand Shovel", "Pirate Bounty", "Camel Bone", "Cockle Shell", "Pipi Shell", "Clam Shell",
+    // Búp bê chế tạo đặc biệt
+    "Cluck Doll", "Victoria Sister", "Goblin Doll"
+  ]);
 
   function layTaiLieuGame() {
     const out = [];
@@ -165,12 +182,24 @@
         const orderSummary = orders.map((ord) => {
           let du = true;
           const reqList = [];
-          for (const [item, reqQty] of Object.entries(ord.items || {})) {
+          const reqItems = ord.items || {};
+          let coVatPhamDatTien = false;
+
+          for (const [item, reqQty] of Object.entries(reqItems)) {
             const numReq = Number(reqQty || 0);
             let inStock = 0;
             if (item === "coins") inStock = coins;
             else if (item === "sfl") inStock = sfl;
             else inStock = Number(inv[item] || 0);
+
+            if (
+              LUXURY_SKIP_ITEMS.has(item) ||
+              (item === "coins" && numReq > 1000) ||
+              (item === "Gold" && numReq > 5) ||
+              (item === "Iron" && numReq > 15)
+            ) {
+              coVatPhamDatTien = true;
+            }
 
             const okItem = inStock >= numReq;
             if (!okItem) du = false;
@@ -179,8 +208,9 @@
 
           let trangThai = "⏳ Chờ nguyên liệu";
           if (ord.completedAt) trangThai = "✅ Đã giao";
+          else if (coVatPhamDatTien) trangThai = "🚫 Bỏ qua (Món đắt tiền/quý)";
           else if (ord.readyAt && ord.readyAt > now) trangThai = "⏰ Chưa đến giờ";
-          else if (du) trangThai = "🚀 Đủ hàng (Có thể giao)";
+          else if (du) trangThai = "🚀 Đủ hàng (Sẵn sàng giao)";
 
           return {
             "Khách Hàng": (ord.from || "NPC").toUpperCase(),
@@ -191,10 +221,13 @@
         console.table(orderSummary);
       }
 
-      // ── 1. ƯU TIÊN 100% GAME BRIDGE: GIAO TOÀN BỘ ĐƠN ĐỦ ĐIỀU KIỆN SIÊU TỐC ──
+      let coHoatDong = false;
+
+      // ── 1. GIAO ĐƠN HÀNG THUYỀN / NPC TIÊU CHUẨN QUA GAME BRIDGE ──
       if (typeof S.deliverOrdersBridge === "function") {
         const res = await S.deliverOrdersBridge(4000);
         if (res && res.ok && res.deliveredCount > 0) {
+          coHoatDong = true;
           const list = res.deliveredList || [];
           console.log(
             `%c[SFL Giao Đơn Hàng] 🎉 ĐÃ GIAO THÀNH CÔNG ${res.deliveredCount} ĐƠN HÀNG QUA GAME BRIDGE! (${loaiTaiKhoan})`,
@@ -221,37 +254,64 @@
               };
             })
           );
-          return true;
-        } else {
-          console.log(`[SFL Giao Đơn Hàng] ℹ️ Hiện chưa có đơn hàng nào đủ 100% nguyên liệu trong kho để giao.`);
         }
       }
 
-      // ── 2. FALLBACK DOM NẾU GAME BRIDGE CHƯA KẾT NỐI ──
-      for (const doc of layTaiLieuGame()) {
-        const board = doc.querySelector("img[src*='delivery_board'], img[src*='orders'], img[src*='npc/'], [data-map-placement*='delivery']");
-        if (board && xemPhanTuRanh(board)) {
-          clickTam(board);
-          await ngu(800);
-
-          const cacBtnDeliver = doc.querySelectorAll("button, [role='button'], div.cursor-pointer");
-          let daGiaoDOM = 0;
-          for (const btn of cacBtnDeliver) {
-            if (!xemPhanTuRanh(btn) || btn.disabled) continue;
-            const txt = (btn.textContent || "").toLowerCase();
-            if (txt.includes("deliver") || txt.includes("giao")) {
-              clickTam(btn);
-              daGiaoDOM++;
-              await ngu(500);
-              break;
-            }
+      // ── 2. TỰ ĐỘNG GIAO HÀNG TRUY NÃ CHO POPPY (MEGA BOUNTY BOARD) ──
+      if (typeof S.sellBountiesBridge === "function") {
+        try {
+          const resBounty = await S.sellBountiesBridge(3500);
+          if (resBounty && resBounty.ok && resBounty.soldCount > 0) {
+            coHoatDong = true;
+            console.log(
+              `%c[SFL Poppy Bounties] 🎯 ĐÃ GIAO ${resBounty.soldCount} MÓN CHO POPPY TẠI PLAZA! ${resBounty.bonusClaimed ? "🏆 (Đã nhận thêm Bounty Bonus)" : ""}`,
+              "color: #ff007f; font-weight: bold; font-size: 13px;"
+            );
           }
-          await dongModal(doc);
-          if (daGiaoDOM > 0) return true;
+        } catch (_eBounty) {}
+      }
+
+      // ── 3. TỰ ĐỘNG NHẬN THƯỞNG NHIỆM VỤ TUẦN (WEEKLY CHORES & KINGDOM CHORES) ──
+      if (typeof S.claimChoresBridge === "function") {
+        try {
+          const resChore = await S.claimChoresBridge(3000);
+          if (resChore && resChore.ok && resChore.claimedCount > 0) {
+            coHoatDong = true;
+            console.log(
+              `%c[SFL Weekly Chores] 🎁 ĐÃ NHẬN THƯỞNG ${resChore.claimedCount} NHIỆM VỤ TUẦN (WEEKLY CHORES)!`,
+              "color: #ff9800; font-weight: bold; font-size: 13px;"
+            );
+          }
+        } catch (_eChore) {}
+      }
+
+      // ── 4. FALLBACK DOM NẾU CẦN ──
+      if (!coHoatDong) {
+        for (const doc of layTaiLieuGame()) {
+          const board = doc.querySelector("img[src*='delivery_board'], img[src*='orders'], img[src*='npc/'], [data-map-placement*='delivery']");
+          if (board && xemPhanTuRanh(board)) {
+            clickTam(board);
+            await ngu(800);
+
+            const cacBtnDeliver = doc.querySelectorAll("button, [role='button'], div.cursor-pointer");
+            let daGiaoDOM = 0;
+            for (const btn of cacBtnDeliver) {
+              if (!xemPhanTuRanh(btn) || btn.disabled) continue;
+              const txt = (btn.textContent || "").toLowerCase();
+              if (txt.includes("deliver") || txt.includes("giao")) {
+                clickTam(btn);
+                daGiaoDOM++;
+                await ngu(500);
+                break;
+              }
+            }
+            await dongModal(doc);
+            if (daGiaoDOM > 0) return true;
+          }
         }
       }
 
-      return false;
+      return coHoatDong;
     } catch (err) {
       console.error("[SFL Giao Đơn Hàng] Lỗi:", err);
       return false;
