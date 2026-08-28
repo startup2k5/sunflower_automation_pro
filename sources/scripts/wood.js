@@ -251,7 +251,8 @@
 
       console.log(`%c[SFL Chặt Cây] 🪓 Có ${axeCount} Rìu | ${treesReady || treesDOM.length} cây gỗ sẵn sàng chặt.`, "color: #795548; font-weight: bold;");
 
-      let daChat = 0;
+      const daClick = new WeakSet(); // Blacklist: các cây đã click trong vòng này
+
       for (const cay of treesDOM) {
         // KIỂM TRA CAPTCHA TRƯỚC MỖI CÂY
         if (typeof S.isCaptchaOpen === "function" && S.isCaptchaOpen()) {
@@ -275,12 +276,30 @@
         }
 
         if (daChat >= axeCount) break;
+
+        // Bỏ qua nếu phần tử đã được click trong vòng này
+        if (daClick.has(cay.rootEl)) continue;
+
+        // Bỏ qua nếu phần tử đã không còn hiển thị (cây đã chặt, DOM đã cập nhật)
         if (!xemPhanTuRanh(cay.el)) continue;
 
-        // Click liên tiếp 3 lần để đốn ngã cây (vào node clickable thực sự, không phải placement)
+        // Bỏ qua nếu cây đã chuyển thành stump (DOM cập nhật từ vòng trước)
+        const cacSrcHienTai = Array.from(cay.rootEl.querySelectorAll("img"))
+          .map(i => (i.getAttribute("src") || i.src || "").toLowerCase());
+        const daThanhStump = cacSrcHienTai.some(s => s.includes("stump") || s.includes("tree_stump"));
+        const dangDemGio = /\d+\s*(?:mins?|secs?|hours?|hrs?|m\b|s\b|h\b)|\d+:\d+/i.test((cay.rootEl.textContent || "").toLowerCase());
+        if (daThanhStump || dangDemGio) {
+          console.log("[SFL Chặt Cây] ℹ️ Bỏ qua cây đã chặt rồi (DOM đã cập nhật).");
+          continue;
+        }
+
+        // Đánh dấu cây này đã click — tránh click lại
+        daClick.add(cay.rootEl);
+
+        // Click liên tiếp 3 lần để đốn ngã cây
         for (let hit = 0; hit < 3; hit++) {
           clickTam(cay.el);
-          await ngu(120 + Math.floor(Math.random() * 50));
+          await ngu(150 + Math.floor(Math.random() * 60));
         }
 
         // Nếu có nút xác nhận Chop hiện lên → bấm
@@ -288,7 +307,7 @@
         const nutChop = timNutChopXacNhan(doc);
         if (nutChop) {
           clickTam(nutChop);
-          await ngu(250);
+          await ngu(300);
         }
 
         // Game báo thiếu rìu → đóng popup và dừng chặt
@@ -299,7 +318,26 @@
         }
 
         daChat++;
-        await ngu(300 + Math.floor(Math.random() * 100));
+
+        // ── XÁC NHẬN DOM ĐÃ CẬP NHẬT (cây biến mất / thành stump) ──
+        // Đợi tối đa 1.5s để React re-render trước khi sang cây tiếp theo
+        let daXacNhan = false;
+        for (let check = 0; check < 6; check++) {
+          await ngu(250);
+          const srcSauChat = Array.from(cay.rootEl.querySelectorAll("img"))
+            .map(i => (i.getAttribute("src") || i.src || "").toLowerCase());
+          const daChuyenStump = srcSauChat.some(s => s.includes("stump") || s.includes("tree_stump"));
+          const khongHienNua = !xemPhanTuRanh(cay.rootEl);
+          if (daChuyenStump || khongHienNua) {
+            daXacNhan = true;
+            break;
+          }
+        }
+        if (!daXacNhan) {
+          console.log("[SFL Chặt Cây] ⚠️ Cây chưa cập nhật DOM sau 1.5s — có thể click thất bại hoặc mạng chậm.");
+        }
+
+        await ngu(200 + Math.floor(Math.random() * 100));
       }
 
       return daChat > 0;

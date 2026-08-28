@@ -233,6 +233,8 @@
 
       console.log(`%c[SFL Thu Hoạch] 🚜 Phát hiện ${cacCayChin.length} ô ruộng đã chín sẵn sàng gặt!`, "color: #4caf50; font-weight: bold; font-size: 13px;");
 
+      const daClickO = new WeakSet(); // Blacklist: các ô đã click trong vòng này
+
       let daThuHoach = 0;
       for (const item of cacCayChin) {
         // KIỂM TRA CAPTCHA TRƯỚC MỖI CÚ CLICK: NẾU XUẤT HIỆN LẬP TỨC DỪNG NGAY
@@ -256,12 +258,52 @@
         const target = item.element || item.placement;
         if (!target || !xemPhanTuRanh(target)) continue;
 
+        // Bỏ qua nếu ô này đã được click rồi (tránh double-click)
+        if (daClickO.has(item.placement)) continue;
+
+        // Xác nhận lại ô vẫn còn chín NGAY TRƯỚC KHI CLICK
+        // (ô có thể đã được gặt bởi click trước đó nếu render nhanh)
+        const srcHienTai = Array.from(item.placement.querySelectorAll("img"))
+          .map(i => (i.getAttribute("src") || i.src || "").toLowerCase());
+        const vanConChin = srcHienTai.some(s =>
+          (s.includes("/crops/") || s.includes("/volcano/crops/")) &&
+          (s.includes("plant") || s.includes("crop")) &&
+          !s.includes("soil") && !s.includes("seed") &&
+          !s.includes("halfway") && !s.includes("almost") && !s.includes("seedling")
+        );
+        if (!vanConChin) {
+          console.log("[SFL Thu Hoạch] ℹ️ Ô đã được gặt rồi (DOM đã cập nhật) → bỏ qua.");
+          continue;
+        }
+
+        // Đánh dấu ô đã click
+        daClickO.add(item.placement);
+
         clickTam(target);
         daThuHoach += 1;
         console.log(`[SFL Thu Hoạch] ✂️ Thu hoạch ô ${daThuHoach}/${cacCayChin.length}`);
 
-        // Tốc độ thu hoạch vừa phải như người thật (300ms - 450ms)
-        await ngu(300 + Math.floor(Math.random() * 150));
+        // ── XÁC NHẬN DOM ĐÃ CẬP NHẬT (ô chuyển sang trống / không còn plant) ──
+        // Đợi tối đa 1.5s để React re-render
+        let daXacNhan = false;
+        for (let check = 0; check < 5; check++) {
+          await ngu(300);
+          const srcSauGat = Array.from(item.placement.querySelectorAll("img"))
+            .map(i => (i.getAttribute("src") || i.src || "").toLowerCase());
+          const vanCoChinSauGat = srcSauGat.some(s =>
+            (s.includes("/crops/") || s.includes("/volcano/crops/")) &&
+            (s.includes("plant") || s.includes("crop")) &&
+            !s.includes("soil") && !s.includes("seed") &&
+            !s.includes("halfway") && !s.includes("almost") && !s.includes("seedling")
+          );
+          if (!vanCoChinSauGat || !xemPhanTuRanh(item.placement)) {
+            daXacNhan = true;
+            break;
+          }
+        }
+        if (!daXacNhan) {
+          console.log("[SFL Thu Hoạch] ⚠️ Ô ruộng chưa cập nhật sau 1.5s — click có thể thất bại.");
+        }
       }
 
       console.log(`%c[SFL Thu Hoạch] ✔️ Hoàn tất thu hoạch ${daThuHoach} ô ruộng!`, "color: #00e676; font-weight: bold; font-size: 13px;");

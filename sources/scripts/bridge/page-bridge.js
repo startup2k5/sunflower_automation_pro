@@ -896,12 +896,14 @@
       }
     }
 
-    // 1. Kiểm tra stock
+    // 1. Kiểm tra stock — CHỈ mua khi server cung cấp stock thực tế > 0
+    // TUYỆT ĐỐI KHÔNG dùng stockDefault làm fallback tránh mua khi shop đóng/hết hàng
     let stock = 0;
     if (state.stock && state.stock[name] !== undefined) {
       stock = toSafeNumber(state.stock[name]);
     } else {
-      stock = toolSpec.stockDefault;
+      // Không có dữ liệu stock từ server → bỏ qua hoàn toàn, không mua
+      return 0;
     }
     if (stock <= 0) return 0;
 
@@ -978,6 +980,13 @@
     const state = getGameState();
     if (!state) return { ok: false, error: "no_state", message: "Không lấy được Game State" };
 
+    // GUARD: Phải có state.stock từ server mới được chạy
+    // Nếu không có stock data → không mua gì để tránh lạm dụng
+    if (!state.stock || typeof state.stock !== "object" || Object.keys(state.stock).length === 0) {
+      console.warn("[SFL Bridge] ⚠️ Không có dữ liệu stock từ server → bỏ qua mua công cụ hoàn toàn.");
+      return { ok: true, crafted: [], totalCoinsSpent: 0, remainingCoins: toSafeNumber(state.coins) };
+    }
+
     let currentCoins = toSafeNumber(state.coins);
     const currentInv = {};
     if (state.inventory) {
@@ -992,29 +1001,44 @@
     for (const spec of WORKBENCH_TOOL_SPECS) {
       if (currentCoins <= 0) break;
 
+      // Lấy stock thực tế từ server — nếu không có thì bỏ qua
+      const stockThucTe = state.stock[spec.name] !== undefined ? toSafeNumber(state.stock[spec.name]) : -1;
+      if (stockThucTe < 0) {
+        console.log(`[SFL Bridge] ℹ️ ${spec.name}: Không có trong state.stock → bỏ qua`);
+        continue;
+      }
+      if (stockThucTe === 0) {
+        console.log(`[SFL Bridge] ℹ️ ${spec.name}: Stock = 0 (hết hàng) → bỏ qua`);
+        continue;
+      }
+
       const qty = getMaxCraftableAmount(spec, state, currentCoins, currentInv);
       if (qty <= 0) continue;
 
+      // Giới hạn tối đa theo stock thực tế của server
+      const qtyAnToan = Math.min(qty, stockThucTe);
+      if (qtyAnToan <= 0) continue;
+
       const unitPrice = calculateToolPrice(spec, state);
-      const cost = unitPrice * qty;
+      const cost = unitPrice * qtyAnToan;
 
       try {
         svc.send({
           type: "tool.crafted",
           tool: spec.name,
-          amount: qty,
+          amount: qtyAnToan,
         });
 
         currentCoins -= cost;
         totalCoinsSpent += cost;
         for (const [ingName, ingReq] of Object.entries(spec.ingredients)) {
-          currentInv[ingName] = Math.max(0, (currentInv[ingName] || 0) - ingReq * qty);
+          currentInv[ingName] = Math.max(0, (currentInv[ingName] || 0) - ingReq * qtyAnToan);
         }
-        currentInv[spec.name] = (currentInv[spec.name] || 0) + qty;
+        currentInv[spec.name] = (currentInv[spec.name] || 0) + qtyAnToan;
 
         craftedList.push({
           tool: spec.name,
-          amount: qty,
+          amount: qtyAnToan,
           unitPrice: unitPrice,
           totalCost: cost,
         });
@@ -1027,13 +1051,13 @@
       try { svc.send({ type: "SAVE" }); } catch (_e) {}
     }
 
-      return {
-        ok: true,
-        crafted: craftedList,
-        totalCoinsSpent: totalCoinsSpent,
-        remainingCoins: currentCoins,
-      };
-    }
+    return {
+      ok: true,
+      crafted: craftedList,
+      totalCoinsSpent: totalCoinsSpent,
+      remainingCoins: currentCoins,
+    };
+  }
 
   // ═══════════════════════════════════════════════════════════════════
   // TÍNH NĂNG MUA HẠT GIỐNG QUA GAME SERVICE (XState Engine)
@@ -3351,6 +3375,327 @@
         landExpanded,
         landRevealed,
         farmUpgraded,
+      }, "*");
+      return;
+    }
+
+    // TỰ ĐỘNG CHĂM SÓC & THU HOẠCH GIA SÚC (ANIMALS: GÀ, BÒ, CỪU)
+    if (data.type === "SFL_ANIMALS_ACTION") {
+      const svc = findGameService();
+      let ok = false;
+      let error = null;
+      let claimedCount = 0;
+      let fedCount = 0;
+      let lovedCount = 0;
+
+      if (svc) {
+        try {
+          const state = svc.state?.context?.state;
+          const now = Date.now();
+          const buildings = [
+            { key: "henHouse", type: "Chicken" },
+            { key: "barn", types: ["Sheep", "Cow"] },
+          ];
+
+          for (const b of buildings) {
+            const animalBuilding = state?.[b.key];
+            if (!animalBuilding || !animalBuilding.animals) continue;
+
+            for (const [id, animal] of Object.entries(animalBuilding.animals)) {
+              if (!animal) continue;
+              const animalType = animal.type || b.type || (b.types && b.types[0]);
+
+              // 1. Thu hoạch sản phẩm sẵn sàng (Trứng, Sữa, Lông cừu...)
+              if (animal.state === "ready") {
+                try {
+                  svc.send({
+                    type: "produce.claimed",
+                    animal: animalType,
+                    id: String(id),
+                  });
+                  claimedCount++;
+                } catch (_eClaim) {}
+              }
+
+              // 2. Cho ăn nếu đang đói (idle)
+              if (animal.state === "idle") {
+                try {
+                  svc.send({
+                    type: "animal.fed",
+                    animal: animalType,
+                    id: String(id),
+                  });
+                  fedCount++;
+                } catch (_eFeed) {}
+              }
+
+              // 3. Vuốt ve tăng tim nếu đang trong chu kỳ ngủ
+              if (animal.state === "loved" || (animal.asleepAt && now > animal.asleepAt)) {
+                try {
+                  svc.send({
+                    type: "animal.loved",
+                    animal: animalType,
+                    id: String(id),
+                  });
+                  lovedCount++;
+                } catch (_eLove) {}
+              }
+            }
+          }
+
+          if (claimedCount > 0 || fedCount > 0 || lovedCount > 0) {
+            ok = true;
+            try { svc.send({ type: "SAVE" }); } catch (_e) {}
+          }
+        } catch (e) {
+          error = e?.message || String(e);
+        }
+      } else {
+        error = "no_service";
+      }
+
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_ANIMALS_ACTION_RESULT",
+        reqId: data.reqId,
+        ok,
+        error,
+        claimedCount,
+        fedCount,
+        lovedCount,
+      }, "*");
+      return;
+    }
+
+    // TỰ ĐỘNG TRỒNG & THU HOẠCH NHÀ KÍNH (GREENHOUSE)
+    if (data.type === "SFL_GREENHOUSE_ACTION") {
+      const svc = findGameService();
+      let ok = false;
+      let error = null;
+      let harvestedCount = 0;
+      let plantedCount = 0;
+      let oiled = false;
+
+      if (svc) {
+        try {
+          const state = svc.state?.context?.state;
+          const inv = state?.inventory || {};
+          const now = Date.now();
+          const pots = state?.greenhouse?.pots || {};
+
+          // 1. Thu hoạch cây nhà kính đã chín
+          for (const [potId, pot] of Object.entries(pots)) {
+            if (pot?.plant && pot.plant.readyAt && pot.plant.readyAt <= now) {
+              try {
+                svc.send({
+                  type: "greenhouse.harvested",
+                  id: String(potId),
+                });
+                harvestedCount++;
+              } catch (_eHarv) {}
+            }
+          }
+
+          // 2. Tiếp dầu cho nhà kính nếu thiếu dầu
+          try {
+            const oilAmount = toSafeNumber(state?.greenhouse?.oil?.amount);
+            if (oilAmount <= 10 && toSafeNumber(inv.Oil) > 0) {
+              svc.send({ type: "greenhouse.oiled" });
+              oiled = true;
+            }
+          } catch (_eOil) {}
+
+          // 3. Gieo hạt cây nhà kính còn trống
+          const GREENHOUSE_SEEDS = [
+            { seed: "Grape Seed", crop: "Grape" },
+            { seed: "Rice Seed", crop: "Rice" },
+            { seed: "Olive Seed", crop: "Olive" },
+            { seed: "Tomato Seed", crop: "Tomato" },
+          ];
+          for (const [potId, pot] of Object.entries(pots)) {
+            if (!pot?.plant) {
+              const available = GREENHOUSE_SEEDS.find((s) => toSafeNumber(inv[s.seed]) > 0);
+              if (available) {
+                try {
+                  svc.send({
+                    type: "greenhouse.planted",
+                    id: String(potId),
+                    plant: available.crop,
+                  });
+                  inv[available.seed] = Math.max(0, toSafeNumber(inv[available.seed]) - 1);
+                  plantedCount++;
+                } catch (_ePlant) {}
+              }
+            }
+          }
+
+          if (harvestedCount > 0 || plantedCount > 0 || oiled) {
+            ok = true;
+            try { svc.send({ type: "SAVE" }); } catch (_e) {}
+          }
+        } catch (e) {
+          error = e?.message || String(e);
+        }
+      } else {
+        error = "no_service";
+      }
+
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_GREENHOUSE_ACTION_RESULT",
+        reqId: data.reqId,
+        ok,
+        error,
+        harvestedCount,
+        plantedCount,
+        oiled,
+      }, "*");
+      return;
+    }
+
+    // TỰ ĐỘNG NẠP DẦU & THU HOẠCH MÁY TRỒNG TRỌT (CROP MACHINE)
+    if (data.type === "SFL_CROP_MACHINE_ACTION") {
+      const svc = findGameService();
+      let ok = false;
+      let error = null;
+      let harvested = false;
+      let oilSupplied = false;
+
+      if (svc) {
+        try {
+          const state = svc.state?.context?.state;
+          const inv = state?.inventory || {};
+
+          // 1. Thu hoạch sản phẩm từ máy Crop Machine
+          try {
+            svc.send({ type: "cropMachine.harvested" });
+            harvested = true;
+          } catch (_eH) {}
+
+          // 2. Tiếp dầu cho Crop Machine
+          try {
+            if (toSafeNumber(inv.Oil) > 0) {
+              svc.send({ type: "cropMachine.oilSupplied" });
+              oilSupplied = true;
+            }
+          } catch (_eOil) {}
+
+          if (harvested || oilSupplied) {
+            ok = true;
+            try { svc.send({ type: "SAVE" }); } catch (_e) {}
+          }
+        } catch (e) {
+          error = e?.message || String(e);
+        }
+      } else {
+        error = "no_service";
+      }
+
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_CROP_MACHINE_ACTION_RESULT",
+        reqId: data.reqId,
+        ok,
+        error,
+        harvested,
+        oilSupplied,
+      }, "*");
+      return;
+    }
+
+    // TỰ ĐỘNG CHĂM SÓC PET & FACTION PET
+    if (data.type === "SFL_PETS_ACTION") {
+      const svc = findGameService();
+      let ok = false;
+      let error = null;
+      let petFedCount = 0;
+      let factionPetFed = false;
+
+      if (svc) {
+        try {
+          const state = svc.state?.context?.state;
+          const pets = state?.pets || {};
+
+          // 1. Cho từng thú cưng (Pet) ăn thức ăn
+          for (const petId of Object.keys(pets)) {
+            try {
+              svc.send({
+                type: "pet.fed",
+                id: String(petId),
+              });
+              petFedCount++;
+            } catch (_ePet) {}
+          }
+
+          // 2. Cho Faction Pet ăn
+          try {
+            svc.send({ type: "factionPet.fed" });
+            factionPetFed = true;
+          } catch (_eFP) {}
+
+          if (petFedCount > 0 || factionPetFed) {
+            ok = true;
+            try { svc.send({ type: "SAVE" }); } catch (_e) {}
+          }
+        } catch (e) {
+          error = e?.message || String(e);
+        }
+      } else {
+        error = "no_service";
+      }
+
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_PETS_ACTION_RESULT",
+        reqId: data.reqId,
+        ok,
+        error,
+        petFedCount,
+        factionPetFed,
+      }, "*");
+      return;
+    }
+
+    // TỰ ĐỘNG THU HOẠCH HỐ DUNG NHAM (LAVA PITS)
+    if (data.type === "SFL_LAVA_PITS_ACTION") {
+      const svc = findGameService();
+      let ok = false;
+      let error = null;
+      let collectedPits = 0;
+
+      if (svc) {
+        try {
+          const state = svc.state?.context?.state;
+          const lavaPits = state?.lavaPits || {};
+
+          for (const pitId of Object.keys(lavaPits)) {
+            try {
+              svc.send({
+                type: "lavaPit.collected",
+                id: String(pitId),
+              });
+              collectedPits++;
+            } catch (_eLava) {}
+          }
+
+          if (collectedPits > 0) {
+            ok = true;
+            try { svc.send({ type: "SAVE" }); } catch (_e) {}
+          }
+        } catch (e) {
+          error = e?.message || String(e);
+        }
+      } else {
+        error = "no_service";
+      }
+
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_LAVA_PITS_ACTION_RESULT",
+        reqId: data.reqId,
+        ok,
+        error,
+        collectedPits,
       }, "*");
       return;
     }
