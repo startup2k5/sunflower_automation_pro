@@ -1,30 +1,13 @@
 // ═══════════════════════════════════════════════════════════════════
-// LUỒNG GIAO ĐƠN HÀNG NPC (deliveries.js)
-// Dựa vào Game Bridge để kiểm tra đơn hàng & kho đồ
-// ĐẶC BIỆT: TỰ ĐỘNG BỎ QUA (KHÔNG TRẢ) CÁC ĐƠN HÀNG THEO MÙA (SEASON TICKETS/CURRENCY)
+// LUỒNG TỰ ĐỘNG GIAO ĐƠN HÀNG TOÀN DIỆN v6.2 (deliveries.js)
+// HỖ TRỢ ĐỘC QUYỀN TÀI KHOẢN VIP (+2 TICKET THƯỞNG) & TÀI KHOẢN THƯỜNG
+// Tự động kiểm tra 100% nguyên liệu trong kho & Giao đơn qua Game Bridge siêu tốc
 // ═══════════════════════════════════════════════════════════════════
 (function (S) {
   "use strict";
 
   let dangBan = false;
   const ngu = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-  // Danh sách từ khóa phần thưởng theo Season cần LOẠI TRỪ (Không tự động trả)
-  const SEASON_REWARD_KEYWORDS = [
-    "ticket", "seasonal", "scroll", "crow feather", "mermaid scale",
-    "tulip bulb", "amber", "solar flare", "dawn breaker", "witches' eve", "catch the kraken", "clash of factions"
-  ];
-
-  function laDonHangSeason(reward) {
-    if (!reward || typeof reward !== "object") return false;
-    for (const key of Object.keys(reward)) {
-      const lowKey = key.toLowerCase();
-      if (SEASON_REWARD_KEYWORDS.some((kw) => lowKey.includes(kw))) {
-        return true;
-      }
-    }
-    return false;
-  }
 
   function layTaiLieuGame() {
     const out = [];
@@ -94,8 +77,6 @@
       view: view,
       clientX: cx,
       clientY: cy,
-      screenX: cx,
-      screenY: cy,
       pageX: cx + (view.scrollX || 0),
       pageY: cy + (view.scrollY || 0),
       which: 1,
@@ -107,34 +88,19 @@
     try { el.focus?.({ preventScroll: true }); } catch (_e) {}
 
     try {
-      if (typeof PointerEvent !== "undefined") {
-        el.dispatchEvent(new PointerEvent("pointerover", { ...baseOpts, pointerId: 1, pointerType: "mouse" }));
-        el.dispatchEvent(new PointerEvent("pointerenter", { ...baseOpts, pointerId: 1, pointerType: "mouse" }));
-        el.dispatchEvent(new PointerEvent("pointerdown", { ...downOpts, pointerId: 1, pointerType: "mouse", isPrimary: true, pressure: 0.5 }));
-      }
+      try { el.dispatchEvent(new PointerEvent("pointerdown", downOpts)); } catch (_p1) {}
+      el.dispatchEvent(new MouseEvent("mousedown", downOpts));
+      try { el.dispatchEvent(new PointerEvent("pointerup", upOpts)); } catch (_p2) {}
+      el.dispatchEvent(new MouseEvent("mouseup", upOpts));
+      el.dispatchEvent(new MouseEvent("click", baseOpts));
+      try { el.click?.(); } catch (_e2) {}
+      kichHoatReactProps(el);
     } catch (_e2) {}
-    el.dispatchEvent(new MouseEvent("mouseover", baseOpts));
-    el.dispatchEvent(new MouseEvent("mouseenter", baseOpts));
-    el.dispatchEvent(new MouseEvent("mousedown", downOpts));
-
-    try {
-      if (typeof PointerEvent !== "undefined") {
-        el.dispatchEvent(new PointerEvent("pointerup", { ...upOpts, pointerId: 1, pointerType: "mouse", isPrimary: true, pressure: 0 }));
-      }
-    } catch (_e3) {}
-    el.dispatchEvent(new MouseEvent("mouseup", upOpts));
-    el.dispatchEvent(new MouseEvent("click", upOpts));
-
-    try { el.click?.(); } catch (_e4) {}
-    kichHoatReactProps(el);
-    if (el.parentElement) kichHoatReactProps(el.parentElement);
 
     setTimeout(() => {
       try {
         if (typeof el.blur === "function") el.blur();
-        el.dispatchEvent(new MouseEvent("mouseout", upOpts));
-        el.dispatchEvent(new MouseEvent("mouseleave", upOpts));
-      } catch (_e5) {}
+      } catch (_e6) {}
     }, 40);
 
     return true;
@@ -158,72 +124,106 @@
     } catch (_e) {}
   }
 
-  // Kiểm tra kho đồ có đủ vật phẩm cho đơn hàng không
-  function duVatPham(items, inv) {
-    if (!items || typeof items !== "object") return false;
-    for (const [item, count] of Object.entries(items)) {
-      if ((inv[item] || 0) < count) return false;
-    }
-    return true;
-  }
-
+  // ═══════ LUỒNG CHÍNH: GIAO ĐƠN HÀNG TỰ ĐỘNG (VIP & THƯỜNG) ═══════
   async function tickDeliveries() {
     if (dangBan) return false;
+
+    if (typeof S.xinKhoa === "function" && !S.xinKhoa("deliveries")) {
+      return false;
+    }
     dangBan = true;
 
     try {
-      let state = null;
-      if (typeof S.requestBridgeState === "function") {
-        state = await S.requestBridgeState(1500);
-      }
-
-      const orders = state?.orders || [];
-      const inv = state?.inventory || {};
-
-      // Lọc các đơn hàng: chưa hoàn thành + KHÔNG phải đơn Season + ĐỦ vật phẩm trong kho
-      const donKhaThi = orders.filter((ord) => {
-        if (ord.completedAt) return false;
-        if (laDonHangSeason(ord.reward)) {
-          return false; // BỎ QUA ĐƠN THEO SEASON!
-        }
-        return duVatPham(ord.items, inv);
-      });
-
-      if (donKhaThi.length === 0) {
+      if (typeof S.isFlowBlocked === "function" && S.isFlowBlocked("deliveries")) {
         return false;
       }
 
-      console.log(`%c[SFL Đơn Hàng] 📜 Phát hiện ${donKhaThi.length} đơn NPC thường có thể giao (đã bỏ qua đơn Season)...`, "color: #009688; font-weight: bold;");
+      // 1. Lấy dữ liệu Game State tươi mới nhất qua Bridge
+      let state = S.gameState;
+      if (typeof S.requestBridgeState === "function") {
+        try {
+          state = await S.requestBridgeState(1500);
+        } catch (_e) {}
+      }
+      if (!state) state = S.gameState;
 
-      // Tìm bảng Delivery Board / NPC trên đảo
+      const isVip = !!state?.user?.isVip;
+      const loaiTaiKhoan = isVip ? "👑 TÀI KHOẢN VIP (+2 Tickets Thưởng)" : "🌾 TÀI KHOẢN THƯỜNG";
+
+      console.log(
+        `%c[SFL Giao Đơn Hàng v6.2] 📦 Bắt đầu quét đơn hàng NPC / Thuyền (${loaiTaiKhoan})...`,
+        isVip ? "color: #ffd700; font-weight: bold; font-size: 13px;" : "color: #00bcd4; font-weight: bold; font-size: 13px;"
+      );
+
+      // ── 1. ƯU TIÊN 100% GAME BRIDGE: GIAO TOÀN BỘ ĐƠN ĐỦ ĐIỀU KIỆN SIÊU TỐC ──
+      if (typeof S.deliverOrdersBridge === "function") {
+        const res = await S.deliverOrdersBridge(4000);
+        if (res && res.ok && res.deliveredCount > 0) {
+          const list = res.deliveredList || [];
+          console.log(
+            `%c[SFL Giao Đơn Hàng] 🎉 ĐÃ GIAO THÀNH CÔNG ${res.deliveredCount} ĐƠN HÀNG QUA GAME BRIDGE! (${loaiTaiKhoan})`,
+            "color: #00e676; font-weight: bold; font-size: 14px;"
+          );
+
+          console.table(
+            list.map((d) => {
+              const itemsStr = Object.entries(d.items || {})
+                .map(([name, count]) => `${count}x ${name}`)
+                .join(", ");
+              const rewardCoins = d.reward?.coins ? `${d.reward.coins} Coins` : "";
+              const rewardSfl = d.reward?.sfl ? `${d.reward.sfl} SFL` : "";
+              const rewardItems = Object.entries(d.reward?.items || {})
+                .map(([name, count]) => `${count}x ${name}`)
+                .join(", ");
+              const rewardStr = [rewardCoins, rewardSfl, rewardItems].filter(Boolean).join(" + ") || "EXP / Friendship";
+
+              return {
+                "Khách Hàng (NPC)": (d.from || "NPC").toUpperCase(),
+                "Hàng Đã Giao": itemsStr,
+                "Phần Thưởng Nhận Được": rewardStr,
+                "Chế Độ VIP": d.isVip ? "👑 VIP (+2 Bonus)" : "Thường",
+              };
+            })
+          );
+          return true;
+        } else {
+          console.log(`[SFL Giao Đơn Hàng] ℹ️ Không có đơn hàng nào đủ 100% nguyên liệu trong kho để giao tại thời điểm này.`);
+        }
+      }
+
+      // ── 2. FALLBACK DOM NẾU GAME BRIDGE CHƯA KẾT NỐI ──
       for (const doc of layTaiLieuGame()) {
-        const board = doc.querySelector("img[src*='delivery_board'], img[src*='orders'], img[src*='npc/']");
+        const board = doc.querySelector("img[src*='delivery_board'], img[src*='orders'], img[src*='npc/'], [data-map-placement*='delivery']");
         if (board && xemPhanTuRanh(board)) {
           clickTam(board);
           await ngu(800);
 
-          // Bấm Deliver các đơn hợp lệ
-          const cacBtnDeliver = doc.querySelectorAll("button, [role='button']");
+          const cacBtnDeliver = doc.querySelectorAll("button, [role='button'], div.cursor-pointer");
+          let daGiaoDOM = 0;
           for (const btn of cacBtnDeliver) {
             if (!xemPhanTuRanh(btn) || btn.disabled) continue;
             const txt = (btn.textContent || "").toLowerCase();
             if (txt.includes("deliver") || txt.includes("giao")) {
               clickTam(btn);
+              daGiaoDOM++;
               await ngu(500);
               break;
             }
           }
           await dongModal(doc);
-          break;
+          if (daGiaoDOM > 0) return true;
         }
       }
 
-      return true;
+      return false;
     } catch (err) {
-      console.error("[SFL Đơn Hàng] Lỗi:", err);
+      console.error("[SFL Giao Đơn Hàng] Lỗi:", err);
       return false;
     } finally {
       dangBan = false;
+      if (typeof S.nhaKhoa === "function") {
+        S.nhaKhoa("deliveries");
+      }
     }
   }
 

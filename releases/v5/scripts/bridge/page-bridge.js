@@ -135,12 +135,20 @@
     // Tính level cơ bản của Bumpkin từ XP
     const level = Math.max(1, Math.floor(Math.sqrt(exp / 100)) + 1);
 
+    const VIP_TRIAL_PERIOD_MS = 1000 * 60 * 60 * 24 * 7;
+    const hasLifetimePass = toSafeNumber(state.inventory?.["Lifetime Farmer Banner"]) > 0;
+    const hasTrialVIP = !!state.vip?.trialStartedAt && state.vip?.trialStartedAt > now - VIP_TRIAL_PERIOD_MS;
+    const hasValidInGameVIP = !!state.vip?.expiresAt && state.vip?.expiresAt > now;
+    const isVip = hasValidInGameVIP || hasLifetimePass || hasTrialVIP;
+
     const user = {
       farmId: state.id || state.farmId || "N/A",
       username: typeof state.username === "string" ? state.username : (state.bumpkin?.name || "Player"),
       coins: toSafeNumber(state.coins),
       gems: toSafeNumber(state.inventory?.Gem),
       balanceSFL: toSafeNumber(state.balance),
+      isVip: isVip,
+      vipExpiresAt: state.vip?.expiresAt || null,
       season: String(season).toLowerCase().trim(),
       bumpkinLevel: level,
       bumpkinExp: exp,
@@ -2677,6 +2685,114 @@
         ok,
         error,
         cookedList,
+      }, "*");
+      return;
+    }
+
+    if (data.type === "SFL_DELIVER_ORDERS") {
+      let deliveredList = [];
+      let ok = false;
+      let error = null;
+
+      if (svc) {
+        try {
+          const state = svc.state?.context?.state;
+          const now = Date.now();
+          const inv = state?.inventory || {};
+          const coins = toSafeNumber(state?.coins);
+          const sfl = toSafeNumber(state?.balance);
+          const orders = state?.delivery?.orders || [];
+
+          // Kiểm tra quyền VIP
+          const VIP_TRIAL_PERIOD_MS = 1000 * 60 * 60 * 24 * 7;
+          const hasLifetimePass = toSafeNumber(inv["Lifetime Farmer Banner"]) > 0;
+          const hasTrialVIP = !!state?.vip?.trialStartedAt && state.vip.trialStartedAt > now - VIP_TRIAL_PERIOD_MS;
+          const hasValidInGameVIP = !!state?.vip?.expiresAt && state.vip.expiresAt > now;
+          const isVip = hasValidInGameVIP || hasLifetimePass || hasTrialVIP;
+
+          // Mô phỏng kho đồ trong lúc giao nhiều đơn hàng liên tiếp
+          const invSim = {};
+          for (const [k, v] of Object.entries(inv)) {
+            invSim[k] = toSafeNumber(v);
+          }
+          let coinsSim = coins;
+          let sflSim = sfl;
+
+          for (const ord of orders) {
+            if (!ord || ord.completedAt) continue;
+            if (ord.readyAt && ord.readyAt > now) continue;
+
+            const reqItems = ord.items || {};
+            let duNguyenLieu = true;
+
+            // Kiểm tra từng nguyên liệu yêu cầu
+            for (const [item, reqAmount] of Object.entries(reqItems)) {
+              const numReq = Number(reqAmount || 0);
+              if (numReq <= 0) continue;
+
+              if (item === "coins") {
+                if (coinsSim < numReq) { duNguyenLieu = false; break; }
+              } else if (item === "sfl") {
+                if (sflSim < numReq) { duNguyenLieu = false; break; }
+              } else {
+                const inStock = Number(invSim[item] || 0);
+                if (inStock < numReq) { duNguyenLieu = false; break; }
+              }
+            }
+
+            if (!duNguyenLieu) continue;
+
+            // Gửi event giao đơn hàng qua Game Bridge
+            try {
+              svc.send({
+                type: "order.delivered",
+                id: ord.id,
+                friendship: true,
+              });
+
+              // Trừ nguyên liệu mô phỏng
+              for (const [item, reqAmount] of Object.entries(reqItems)) {
+                const numReq = Number(reqAmount || 0);
+                if (item === "coins") {
+                  coinsSim = Math.max(0, coinsSim - numReq);
+                } else if (item === "sfl") {
+                  sflSim = Math.max(0, sflSim - numReq);
+                } else {
+                  invSim[item] = Math.max(0, (invSim[item] || 0) - numReq);
+                }
+              }
+
+              deliveredList.push({
+                id: ord.id,
+                from: ord.from,
+                items: reqItems,
+                reward: ord.reward || {},
+                isVip: isVip,
+              });
+            } catch (errSend) {
+              console.warn("[SFL Bridge Deliver Error]", ord.id, errSend);
+            }
+          }
+
+          if (deliveredList.length > 0) {
+            try { svc.send({ type: "SAVE" }); } catch (_e) {}
+            ok = true;
+          }
+        } catch (e) {
+          error = e?.message || String(e);
+        }
+      } else {
+        error = "no_service";
+      }
+
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_DELIVER_ORDERS_RESULT",
+        reqId: data.reqId,
+        ok,
+        error,
+        deliveredCount: deliveredList.length,
+        deliveredList,
       }, "*");
       return;
     }

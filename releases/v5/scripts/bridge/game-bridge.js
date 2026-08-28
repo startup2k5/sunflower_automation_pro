@@ -718,6 +718,36 @@
   }
   S.buySeasonalSeedsBridge = buySeasonalSeedsBridge;
 
+  // Giao toàn bộ đơn hàng đủ điều kiện qua Game Bridge (Hỗ trợ VIP & Tài khoản thường)
+  function deliverOrdersBridge(timeoutMs = 4000) {
+    return new Promise((resolve) => {
+      const reqId = "deliv_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+      let timer = null;
+
+      function onMsg(ev) {
+        if (ev.source !== window || !ev.data || ev.data._sfl !== true) return;
+        if (ev.data.type === "SFL_DELIVER_ORDERS_RESULT" && ev.data.reqId === reqId) {
+          clearTimeout(timer);
+          window.removeEventListener("message", onMsg);
+          resolve(ev.data);
+        }
+      }
+
+      timer = setTimeout(() => {
+        window.removeEventListener("message", onMsg);
+        resolve({ ok: false, error: "timeout", deliveredCount: 0, deliveredList: [] });
+      }, timeoutMs);
+
+      window.addEventListener("message", onMsg);
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_DELIVER_ORDERS",
+        reqId: reqId,
+      }, "*");
+    });
+  }
+  S.deliverOrdersBridge = deliverOrdersBridge;
+
   // Lắng nghe message từ page-bridge.js
   let daBaoBridgeReady = false;
   window.addEventListener("message", (event) => {

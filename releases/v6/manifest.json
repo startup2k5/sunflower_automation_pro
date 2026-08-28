@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Sunflower Land Pro Automation v6.1.1",
-  "version": "6.1.1",
-  "description": "Hệ thống tự động hóa toàn diện 100% Game Bridge cho Sunflower Land (v6.1.1).",
+  "name": "Sunflower Land Pro Automation v6.2",
+  "version": "6.2.0",
+  "description": "Hệ thống tự động hóa toàn diện 100% Game Bridge cho Sunflower Land (v6.2).",
   "permissions": [
     "storage"
   ],
