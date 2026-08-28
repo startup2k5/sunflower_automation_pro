@@ -1,0 +1,247 @@
+// ═══════════════════════════════════════════════════════════════════
+// BỘ ĐIỀU PHỐI TUẦN TỰ TOÀN BỘ CÁC LUỒNG (scheduler.js)
+// ĐIỀU PHỐI TUẦN TỰ 100% (STRICT SEQUENTIAL) — CHỐNG CHỒNG LẤN TUYỆT ĐỐI
+// Đóng sạch sẽ modal giữa các bước, nhịp bước rõ ràng, không bao giờ chạy đè luồng
+// ═══════════════════════════════════════════════════════════════════
+(function (S) {
+  "use strict";
+
+  let dangChayVongLap = false;
+  const ngu = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  // Danh sách 15 luồng tuần tự nghiêm ngặt (kèm featureId khớp Popup UI)
+  const CAC_LUONG = [
+    { id: "load_data", ten: "1. Quét Dữ Liệu", fn: () => S.loadData?.(false) },
+    { id: "checkin", ten: "2. Check-in Rương & Thuyền", fn: () => S.tickCheckin?.() },
+    { id: "tools_buy", ten: "3. Mua Công Cụ Đủ Điều Kiện", fn: () => S.tickToolsBuy?.() },
+    { id: "seeds_buy", ten: "4. Mua Hạt Giống Theo Mùa", featureId: 9, fn: () => S.tickSeedsBuy?.() },
+    // ── CHU KỲ CANH TÁC RUỘNG ĐẤT BẮT BUỘC ──
+    { id: "crops_harvest", ten: "5. Thu Hoạch Ruộng", featureId: 7, fn: () => S.tickCropHarvest?.() },
+    { id: "compost", ten: "6. Thu Hoạch & Ủ Phân Compost", featureId: 10, fn: () => S.tickCompost?.() },
+    { id: "fertilise", ten: "7. Rắc Phân Sprout Mix", featureId: 7, fn: () => S.tickFertilise?.() },
+    { id: "crops_plant", ten: "8. Gieo Hạt Theo Mùa", featureId: 7, fn: () => S.tickCropPlant?.() },
+    // ── CÁC TÀI NGUYÊN & HOẠT ĐỘNG KHÁC ──
+    { id: "mushrooms", ten: "9. Nhặt Nấm Rừng", featureId: 4, fn: () => S.tickThuHoachNam?.() },
+    { id: "flowers", ten: "10. Chăm Sóc Hoa", featureId: 8, fn: () => S.tickFlowerAction?.() },
+    { id: "honey", ten: "11. Thu Hoạch Mật Ong", featureId: 3, fn: () => S.tickHoney?.() },
+    { id: "wood", ten: "12. Chặt Cây Lấy Gỗ", featureId: 5, fn: () => S.tickWoodChop?.() },
+    { id: "mining", ten: "13. Đào Khoáng Sản & Dầu", featureId: 6, fn: () => S.tickMining?.() },
+    { id: "fruit_tree", ten: "14. Cây Ăn Quả", featureId: 11, fn: () => S.tickFruitTree?.() },
+    { id: "cooking", ten: "15. Nấu Ăn & Chế Biến", fn: () => S.tickCooking?.() },
+  ];
+
+  function layTaiLieuGame() {
+    const out = [];
+    const daThay = new Set();
+    const them = (doc) => {
+      if (!doc || daThay.has(doc)) return;
+      daThay.add(doc);
+      out.push(doc);
+    };
+    const nganXep = [];
+    them(document);
+    nganXep.push(document);
+    while (nganXep.length) {
+      const doc = nganXep.pop();
+      let iframes;
+      try { iframes = doc.querySelectorAll("iframe"); } catch (_e) { continue; }
+      for (let i = 0; i < iframes.length; i += 1) {
+        try {
+          const idoc = iframes[i].contentDocument;
+          if (idoc) { them(idoc); nganXep.push(idoc); }
+        } catch (_e2) {}
+      }
+    }
+    return out;
+  }
+
+  function xemPhanTuRanh(el) {
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return false;
+    const view = el.ownerDocument?.defaultView || window;
+    let style;
+    try { style = view.getComputedStyle(el); } catch (_e) { return false; }
+    return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+  }
+
+  function isGoblinSwarm() {
+    for (const doc of layTaiLieuGame()) {
+      if (!doc || !doc.body) continue;
+      const txt = (doc.body.textContent || "").toLowerCase();
+      if (txt.includes("goblin swarm") || txt.includes("taken over your farm") || txt.includes("wait for them to leave")) {
+        return true;
+      }
+    }
+    return false;
+  }
+  S.isGoblinSwarm = isGoblinSwarm;
+
+  function laNutCloseChuan(el) {
+    if (!el || !xemPhanTuRanh(el)) return false;
+    const src = (el.src || el.getAttribute?.("src") || "").toLowerCase();
+    const alt = (el.alt || el.getAttribute?.("alt") || "").toLowerCase();
+    // TUYỆT ĐỐI KHÔNG ĐƯỢC NHẬN NHẦM THÙNG COMPOST CLOSED HOẶC ĐỒ TRÊN ĐẢO!
+    if (src.includes("compost") || src.includes("closed") || src.includes("building") || src.includes("island")) {
+      return false;
+    }
+    const laAnhClose = src.includes("/ui/close") || src.includes("/icons/close") || src.includes("close.png") || src.includes("cancel.png") || alt === "close" || alt === "cancel";
+    const laAriaClose = el.getAttribute?.("aria-label") === "close";
+    const trongDialog = !!el.closest?.('[role="dialog"], [role="modal"], div[class*="modal"], div[style*="dark_border"], .scrollable');
+    return (laAnhClose || laAriaClose) && trongDialog;
+  }
+
+  // Dọn dẹp sạch sẽ toàn bộ popup giữa các bước (trừ Captcha)
+  async function donDepPopupGiuaCacBuoc() {
+    if (typeof S.isCaptchaOpen === "function" && S.isCaptchaOpen()) return;
+    for (let loop = 0; loop < 2; loop++) {
+      let daDong = false;
+      for (const doc of layTaiLieuGame()) {
+        if (!doc || !doc.body) continue;
+        const cacAnhClose = doc.querySelectorAll('img[src*="/ui/close"], img[src*="close.png"], img[src*="cancel.png"], button[aria-label="close"]');
+        for (const img of cacAnhClose) {
+          if (!laNutCloseChuan(img)) continue;
+          const btn = img.closest("button, [role='button'], div[class*='cursor-pointer']") || img;
+          try { btn.click(); } catch (_e) {}
+          daDong = true;
+          await ngu(200);
+          break;
+        }
+      }
+      if (!daDong) break;
+    }
+    for (const doc of layTaiLieuGame()) {
+      try {
+        const view = doc.defaultView || window;
+        view.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true, cancelable: true }));
+        doc.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true, cancelable: true }));
+      } catch (_e) {}
+    }
+    await ngu(150);
+  }
+
+  // ═══════ VÒNG LẶP ĐIỀU PHỐI TUẦN TỰ ĐỘC QUYỀN (STRICT SEQUENTIAL) ═══════
+  async function vongLapChinh() {
+    if (dangChayVongLap) return;
+    dangChayVongLap = true;
+
+    console.log("%c[SFL Điều Phối] 🚀 KHỞI ĐỘNG HỆ THỐNG ĐIỀU PHỐI TUẦN TỰ 100% (STRICT SEQUENTIAL)...", "color: #00e676; font-weight: bold; font-size: 14px;");
+
+    // Đợi game và dữ liệu State sẵn sàng (tối đa 10s)
+    for (let wait = 0; wait < 20; wait++) {
+      if (S.gameState || document.querySelector('[data-map-placement="true"], #root, canvas')) break;
+      await ngu(500);
+    }
+
+    let soThuTuVongLap = 0;
+
+    while (true) {
+      const masterBat = S.cauHinh?.masterBat !== undefined ? !!S.cauHinh.masterBat : true;
+      if (!masterBat) {
+        await ngu(2000);
+        continue;
+      }
+
+      soThuTuVongLap++;
+      console.log(`%c[SFL Điều Phối] 🔄 BẮT ĐẦU CHU KỲ VÒNG ${soThuTuVongLap}...`, "color: #2196f3; font-weight: bold; font-size: 13px;");
+
+      // Duyệt tuần tự lần lượt qua từng bước một (1 -> 15)
+      for (let i = 0; i < CAC_LUONG.length; i++) {
+        const luongObj = CAC_LUONG[i];
+
+        // 0. Kiểm tra cấu hình bật/tắt từ Popup UI (nếu người dùng chủ động tắt)
+        if (luongObj.featureId !== undefined && S.cauHinh && S.cauHinh[luongObj.featureId] === false) {
+          continue;
+        }
+
+        // Bỏ qua luồng Checkin nếu hôm nay đã check-in xong hoặc đang trong cooldown
+        if (luongObj.id === "checkin" && (S.__daCheckinHomNay || (S.__cooldownCheckin && Date.now() < S.__cooldownCheckin))) {
+          continue;
+        }
+
+        // Bỏ qua luồng Mua Công Cụ từ vòng 2 trở đi (chỉ chạy 1 lần duy nhất ở vòng 1 cho đến khi tải lại trang)
+        if (luongObj.id === "tools_buy" && (soThuTuVongLap > 1 || S.__daMuaCongCuVongDau)) {
+          continue;
+        }
+
+        // Bỏ qua luồng Mua Hạt Giống từ vòng 2 trở đi (chỉ chạy 1 lần duy nhất ở vòng 1 cho đến khi tải lại trang)
+        if (luongObj.id === "seeds_buy" && (soThuTuVongLap > 1 || S.__daMuaHatGiongVongDau)) {
+          continue;
+        }
+
+        // Bỏ qua luồng Compost nếu đang trong thời gian nghỉ cooldown (ngăn chặn spam 100%)
+        if (luongObj.id === "compost" && S.__thoiGianNghiCompost && Date.now() < S.__thoiGianNghiCompost) {
+          continue;
+        }
+
+        // 1. Kiểm tra và giải Captcha trước mỗi bước
+        if (typeof S.isCaptchaOpen === "function" && S.isCaptchaOpen()) {
+          console.log("%c[SFL Điều Phối] 🚨 Gặp Captcha! Tạm dừng để giải ngay...", "color: #ff3838; font-weight: bold;");
+          if (typeof S.kiemTraVaGiaiCaptcha === "function") {
+            await S.kiemTraVaGiaiCaptcha();
+          }
+          await ngu(500);
+        }
+
+        // 2. Kiểm tra Goblin Swarm
+        while (isGoblinSwarm()) {
+          console.log("%c[SFL Điều Phối] 👺 Goblin Swarm đang chiếm farm! Đợi 3s...", "color: #ff5252; font-weight: bold;");
+          await ngu(3000);
+        }
+
+        // 3. Đóng sạch sẽ các popup còn sót lại của bước trước
+        await donDepPopupGiuaCacBuoc();
+
+        // 4. Bắt đầu thực thi DUY NHẤT luồng hiện tại và ĐỢI KẾT THÚC HOÀN TOÀN
+        console.log(`%c[SFL Điều Phối] ▶️ [BƯỚC ${i + 1}/${CAC_LUONG.length}] BẮT ĐẦU: ${luongObj.ten.toUpperCase()}`, "color: #00bcd4; font-weight: bold; font-size: 12px;");
+        S.__captchaInterrupted = false;
+
+        try {
+          if (typeof luongObj.fn === "function") {
+            await luongObj.fn();
+          }
+        } catch (err) {
+          console.error(`[SFL Điều Phối] Lỗi trong bước ${luongObj.ten}:`, err);
+        }
+
+        // 5. Nếu bị ngắt bởi Captcha trong lúc thực thi
+        if (S.__captchaInterrupted || (typeof S.isCaptchaOpen === "function" && S.isCaptchaOpen())) {
+          console.log(`%c[SFL Điều Phối] 🚨 Bị ngắt bởi Captcha! Đợi giải xong trước khi đi tiếp...`, "color: #ff9800; font-weight: bold;");
+          if (typeof S.kiemTraVaGiaiCaptcha === "function") {
+            await S.kiemTraVaGiaiCaptcha();
+          }
+          await ngu(500);
+          await donDepPopupGiuaCacBuoc();
+
+          // KHI GIẢI XONG CAPTCHA -> TIẾP TỤC QUAY LẠI CHÍNH LUỒNG ĐÓ!
+          if (!S.isCaptchaOpen || !S.isCaptchaOpen()) {
+            console.log(`%c[SFL Điều Phối] 🔄 Đã giải xong Captcha! TIẾP TỤC QUAY LẠI HOÀN THÀNH LUỒNG: ${luongObj.ten.toUpperCase()}`, "color: #00e676; font-weight: bold; font-size: 13px;");
+            S.__captchaInterrupted = false;
+            i--; // Giảm i để vòng lặp for chạy lại chính bước này
+            await ngu(1000);
+            continue;
+          }
+        }
+
+        console.log(`[SFL Điều Phối] ✔️ [BƯỚC ${i + 1}/${CAC_LUONG.length}] XONG: ${luongObj.ten}`);
+
+        // 6. Giãn cách tự nhiên như người thật giữa các luồng (1.5s - 2.5s)
+        const delay = 1500 + Math.floor(Math.random() * 1000);
+        await ngu(delay);
+      }
+
+      // Kết thúc 1 chu kỳ hoàn chỉnh (15 bước) -> Nghỉ giải lao 5s - 7s
+      console.log(`%c[SFL Điều Phối] 🔄 HOÀN TẤT 1 CHU KỲ (15 LUỒNG) → Nghỉ giải lao 5s trước khi lặp lại...`, "color: #4caf50; font-weight: bold; font-size: 13px;");
+      await ngu(5000 + Math.floor(Math.random() * 2000));
+    }
+  }
+
+  S.vongDieuPhoi = vongLapChinh;
+
+  // Khởi động sau khi vào game 4 giây (chỉ ở frame game chính)
+  setTimeout(() => {
+    if (window !== window.top && !document.querySelector('#root, [data-map-placement="true"], canvas')) return;
+    vongLapChinh();
+  }, 4000);
+
+})(window.SFL = window.SFL || {});

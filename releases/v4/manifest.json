@@ -1,0 +1,67 @@
+{
+  "manifest_version": 3,
+  "name": "Sunflower Land UI Automation",
+  "version": "0.1.0",
+  "description": "Giao diện (UI) thuần - chưa có logic tự động hóa.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://sunflower-land.com/*",
+    "https://www.sunflower-land.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://sunflower-land.com/*",
+        "https://www.sunflower-land.com/*"
+      ],
+      "all_frames": true,
+      "js": [
+        "content.js",
+        "scripts/lock.js",
+        "scripts/captcha.js",
+        "scripts/tap.js",
+        "scripts/scan_data.js",
+        "scripts/checkin.js",
+        "scripts/mushrooms.js",
+        "scripts/flowers.js",
+        "scripts/honey.js",
+        "scripts/wood.js",
+        "scripts/mining.js",
+        "scripts/crops_harvest.js",
+        "scripts/fertilise.js",
+        "scripts/crops_plant.js",
+        "scripts/fruit_tree.js",
+        "scripts/compost.js",
+        "scripts/scheduler.js"
+      ],
+      "run_at": "document_end"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "scripts/bridge/page-bridge.js"
+      ],
+      "matches": [
+        "https://sunflower-land.com/*",
+        "https://www.sunflower-land.com/*"
+      ]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Sunflower Land UI",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
+}

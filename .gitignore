@@ -1,3 +1,7 @@
+# Source code tham khảo (không push lên git)
+manguon/
+
+# OS / IDE
 .DS_Store
 Thumbs.db
 *.log
@@ -6,3 +10,5 @@ Thumbs.db
 *.zip
 *.crx
 *.pem
+*.rar
+scratch_recipes.json

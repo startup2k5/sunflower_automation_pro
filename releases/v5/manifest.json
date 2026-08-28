@@ -1,0 +1,71 @@
+{
+  "manifest_version": 3,
+  "name": "Sunflower Land Pro Automation v5",
+  "version": "5.0.0",
+  "description": "Hệ thống tự động hóa toàn diện 100% Game Bridge cho Sunflower Land.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://sunflower-land.com/*",
+    "https://www.sunflower-land.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://sunflower-land.com/*",
+        "https://www.sunflower-land.com/*"
+      ],
+      "all_frames": true,
+      "js": [
+        "content.js",
+        "scripts/bridge/game-bridge.js",
+        "scripts/lock.js",
+        "scripts/captcha.js",
+        "scripts/load_data.js",
+        "scripts/checkin.js",
+        "scripts/tools_buy.js",
+        "scripts/seeds_buy.js",
+        "scripts/mushrooms.js",
+        "scripts/flowers.js",
+        "scripts/honey.js",
+        "scripts/wood.js",
+        "scripts/mining.js",
+        "scripts/fruit_tree.js",
+        "scripts/compost.js",
+        "scripts/cooking.js",
+        "scripts/deliveries.js",
+        "scripts/crops_harvest.js",
+        "scripts/fertilise.js",
+        "scripts/crops_plant.js",
+        "scripts/scheduler.js"
+      ],
+      "run_at": "document_end"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "scripts/bridge/page-bridge.js"
+      ],
+      "matches": [
+        "https://sunflower-land.com/*",
+        "https://www.sunflower-land.com/*"
+      ]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Sunflower Land Pro v5",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
+}
