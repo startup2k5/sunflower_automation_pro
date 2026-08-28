@@ -2967,6 +2967,103 @@
       return;
     }
 
+    // TỰ ĐỘNG NHẬN THƯỞNG MỐC THÁNG / SEASON TRACK & MILESTONES CODEX
+    if (data.type === "SFL_CLAIM_MILESTONES") {
+      const svc = findGameService();
+      let ok = false;
+      let error = null;
+      let claimedTracks = 0;
+      let claimedCodex = 0;
+
+      if (svc) {
+        try {
+          const state = svc.state?.context?.state;
+          const now = Date.now();
+          const inv = state?.inventory || {};
+          const VIP_TRIAL_PERIOD_MS = 1000 * 60 * 60 * 24 * 7;
+          const hasLifetimePass = toSafeNumber(inv["Lifetime Farmer Banner"]) > 0;
+          const hasTrialVIP = !!state?.vip?.trialStartedAt && state.vip.trialStartedAt > now - VIP_TRIAL_PERIOD_MS;
+          const hasValidInGameVIP = !!state?.vip?.expiresAt && state.vip.expiresAt > now;
+          const isVip = hasValidInGameVIP || hasLifetimePass || hasTrialVIP;
+
+          // 1. Nhận thưởng Track Milestones (Free Track)
+          for (let step = 0; step < 50; step++) {
+            try {
+              svc.send({
+                type: "trackMilestone.claimed",
+                track: "free",
+              });
+              claimedTracks++;
+            } catch (_e) {
+              break;
+            }
+          }
+
+          // 2. Nhận thưởng Track Milestones (Premium Track cho VIP)
+          if (isVip) {
+            for (let step = 0; step < 50; step++) {
+              try {
+                svc.send({
+                  type: "trackMilestone.claimed",
+                  track: "premium",
+                });
+                claimedTracks++;
+              } catch (_e) {
+                break;
+              }
+            }
+          }
+
+          // 3. Nhận thưởng Codex Milestones
+          const ALL_CODEX_MILESTONES = [
+            "Novice Angler", "Advanced Angler", "Expert Angler", "Fish Encyclopedia",
+            "Master Angler", "Marine Marvel Master", "Deep Sea Diver", "Marine Biologist",
+            "Sunpetal Savant", "Bloom Big Shot", "Lily Luminary"
+          ];
+          for (const mName of ALL_CODEX_MILESTONES) {
+            if (state?.milestones?.[mName]) continue;
+            try {
+              svc.send({
+                type: "milestone.claimed",
+                milestone: mName,
+              });
+              claimedCodex++;
+            } catch (_e) {}
+          }
+
+          // 4. Nhận thưởng VIP Referral Milestones nếu có
+          for (let mId = 1; mId <= 20; mId++) {
+            try {
+              svc.send({
+                type: "vipReferralMilestones.claimed",
+                milestone: mId,
+              });
+            } catch (_e) {}
+          }
+
+          if (claimedTracks > 0 || claimedCodex > 0) {
+            try { svc.send({ type: "SAVE" }); } catch (_e) {}
+            ok = true;
+          }
+        } catch (e) {
+          error = e?.message || String(e);
+        }
+      } else {
+        error = "no_service";
+      }
+
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_CLAIM_MILESTONES_RESULT",
+        reqId: data.reqId,
+        ok,
+        error,
+        claimedTracks,
+        claimedCodex,
+      }, "*");
+      return;
+    }
+
     if (data.type === "SFL_GET_STATE") {
       const statePayload = buildStatePayload();
       window.postMessage({

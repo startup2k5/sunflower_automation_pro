@@ -808,6 +808,36 @@
   }
   S.sellBountiesBridge = sellBountiesBridge;
 
+  // Tự động nhận thưởng Mốc Tháng (Season Track Milestones) & Codex Milestones qua Game Bridge
+  function claimMilestonesBridge(timeoutMs = 3500) {
+    return new Promise((resolve) => {
+      const reqId = "mls_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+      let timer = null;
+
+      function onMsg(ev) {
+        if (ev.source !== window || !ev.data || ev.data._sfl !== true) return;
+        if (ev.data.type === "SFL_CLAIM_MILESTONES_RESULT" && ev.data.reqId === reqId) {
+          clearTimeout(timer);
+          window.removeEventListener("message", onMsg);
+          resolve(ev.data);
+        }
+      }
+
+      timer = setTimeout(() => {
+        window.removeEventListener("message", onMsg);
+        resolve({ ok: false, error: "timeout", claimedTracks: 0, claimedCodex: 0 });
+      }, timeoutMs);
+
+      window.addEventListener("message", onMsg);
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_CLAIM_MILESTONES",
+        reqId: reqId,
+      }, "*");
+    });
+  }
+  S.claimMilestonesBridge = claimMilestonesBridge;
+
   // Lắng nghe message từ page-bridge.js
   let daBaoBridgeReady = false;
   window.addEventListener("message", (event) => {

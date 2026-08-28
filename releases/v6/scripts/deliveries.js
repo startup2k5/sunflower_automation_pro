@@ -285,7 +285,21 @@
         } catch (_eChore) {}
       }
 
-      // ── 4. FALLBACK DOM NẾU CẦN ──
+      // ── 4. TỰ ĐỘNG NHẬN THƯỞNG MỐC THÁNG (SEASON TRACK & CODEX MILESTONES) ──
+      if (typeof S.claimMilestonesBridge === "function") {
+        try {
+          const resMls = await S.claimMilestonesBridge(3000);
+          if (resMls && resMls.ok && (resMls.claimedTracks > 0 || resMls.claimedCodex > 0)) {
+            coHoatDong = true;
+            console.log(
+              `%c[SFL Mốc Thưởng Tháng] 🏆 ĐÃ NHẬN ${resMls.claimedTracks} MỐC THÁNG (TRACK MILESTONES) & ${resMls.claimedCodex} MỐC CODEX!`,
+              "color: #ffd700; font-weight: bold; font-size: 13px;"
+            );
+          }
+        } catch (_eMls) {}
+      }
+
+      // ── 5. FALLBACK DOM NẾU CẦN ──
       if (!coHoatDong) {
         for (const doc of layTaiLieuGame()) {
           const board = doc.querySelector("img[src*='delivery_board'], img[src*='orders'], img[src*='npc/'], [data-map-placement*='delivery']");

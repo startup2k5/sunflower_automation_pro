@@ -610,6 +610,20 @@
 
       // 2. Check-in Thuyền Restock hàng hóa
       const okThuyen = await xuLyCheckinThuyenRestock(force);
+      await ngu(400);
+
+      // 3. Tự động nhận thưởng Mốc Tháng (Season Track) & Codex Milestones
+      if (typeof S.claimMilestonesBridge === "function") {
+        try {
+          const resMls = await S.claimMilestonesBridge(3000);
+          if (resMls && resMls.ok && (resMls.claimedTracks > 0 || resMls.claimedCodex > 0)) {
+            console.log(
+              `%c[SFL Mốc Thưởng Tháng] 🏆 Check-in đã nhận ${resMls.claimedTracks} Mốc Tháng (Track Milestones) & ${resMls.claimedCodex} Mốc Codex!`,
+              "color: #ffd700; font-weight: bold; font-size: 13px;"
+            );
+          }
+        } catch (_eMls) {}
+      }
 
       // Đánh dấu hoàn thành hôm nay để scheduler bỏ qua ở tất cả các vòng tiếp theo
       if (okRuong || okThuyen) {
