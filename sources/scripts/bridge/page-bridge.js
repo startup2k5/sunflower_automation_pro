@@ -1174,10 +1174,12 @@
 
     const unitPrice = calculateSeedPrice(seedSpec, state);
 
-    let stock = 400;
-    if (state.stock && state.stock[seedSpec.name] !== undefined) {
-      stock = toSafeNumber(state.stock[seedSpec.name]);
+    // CHỈ mua khi server cung cấp stock thực tế — KHÔNG dùng fallback mặc định
+    // Fallback 400 cũ rất nguy hiểm: mua khi shop đóng/hết hàng → server reject → ban
+    if (!state.stock || state.stock[seedSpec.name] === undefined) {
+      return 0; // Không có dữ liệu stock từ server → bỏ qua
     }
+    const stock = toSafeNumber(state.stock[seedSpec.name]);
     if (stock <= 0) return 0;
 
     if (unitPrice <= 0) {
@@ -1199,6 +1201,13 @@
     let currentCoins = toSafeNumber(state.coins);
     if (currentCoins <= 0) {
       return { ok: true, bought: [], totalCoinsSpent: 0, message: "Hết Coins trong túi" };
+    }
+
+    // GUARD: Phải có state.stock từ server mới được chạy
+    // Nếu không có stock data → không mua gì để tránh mua khi shop đóng
+    if (!state.stock || typeof state.stock !== "object" || Object.keys(state.stock).length === 0) {
+      console.warn("[SFL Bridge] ⚠️ Không có dữ liệu stock hạt giống từ server → bỏ qua mua hạt giống hoàn toàn.");
+      return { ok: true, bought: [], totalCoinsSpent: 0, remainingCoins: currentCoins, message: "Không có stock data" };
     }
 
     const currentSeason = (requestedSeason || state.season?.season || "spring").toLowerCase();
