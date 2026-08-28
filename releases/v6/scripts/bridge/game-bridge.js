@@ -868,6 +868,96 @@
   }
   S.openTreasureChestsBridge = openTreasureChestsBridge;
 
+  // Tự động câu cá (Auto Fishing) qua Game Bridge
+  function autoFishingBridge(timeoutMs = 4500) {
+    return new Promise((resolve) => {
+      const reqId = "fish_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+      let timer = null;
+
+      function onMsg(ev) {
+        if (ev.source !== window || !ev.data || ev.data._sfl !== true) return;
+        if (ev.data.type === "SFL_AUTO_FISHING_RESULT" && ev.data.reqId === reqId) {
+          clearTimeout(timer);
+          window.removeEventListener("message", onMsg);
+          resolve(ev.data);
+        }
+      }
+
+      timer = setTimeout(() => {
+        window.removeEventListener("message", onMsg);
+        resolve({ ok: false, error: "timeout", castCount: 0, caughtList: [] });
+      }, timeoutMs);
+
+      window.addEventListener("message", onMsg);
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_AUTO_FISHING",
+        reqId: reqId,
+      }, "*");
+    });
+  }
+  S.autoFishingBridge = autoFishingBridge;
+
+  // Tự động cào muối & đào mỏ dầu qua Game Bridge
+  function harvestSaltOilBridge(timeoutMs = 3500) {
+    return new Promise((resolve) => {
+      const reqId = "salt_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+      let timer = null;
+
+      function onMsg(ev) {
+        if (ev.source !== window || !ev.data || ev.data._sfl !== true) return;
+        if (ev.data.type === "SFL_HARVEST_SALT_OIL_RESULT" && ev.data.reqId === reqId) {
+          clearTimeout(timer);
+          window.removeEventListener("message", onMsg);
+          resolve(ev.data);
+        }
+      }
+
+      timer = setTimeout(() => {
+        window.removeEventListener("message", onMsg);
+        resolve({ ok: false, error: "timeout", saltHarvested: 0, oilDrilled: 0, saltFarmUpgraded: false });
+      }, timeoutMs);
+
+      window.addEventListener("message", onMsg);
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_HARVEST_SALT_OIL",
+        reqId: reqId,
+      }, "*");
+    });
+  }
+  S.harvestSaltOilBridge = harvestSaltOilBridge;
+
+  // Tự động mở rộng ô đất & nâng cấp đảo qua Game Bridge
+  function autoExpandUpgradeBridge(timeoutMs = 3500) {
+    return new Promise((resolve) => {
+      const reqId = "expand_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+      let timer = null;
+
+      function onMsg(ev) {
+        if (ev.source !== window || !ev.data || ev.data._sfl !== true) return;
+        if (ev.data.type === "SFL_AUTO_EXPAND_UPGRADE_RESULT" && ev.data.reqId === reqId) {
+          clearTimeout(timer);
+          window.removeEventListener("message", onMsg);
+          resolve(ev.data);
+        }
+      }
+
+      timer = setTimeout(() => {
+        window.removeEventListener("message", onMsg);
+        resolve({ ok: false, error: "timeout", landExpanded: false, landRevealed: false, farmUpgraded: false });
+      }, timeoutMs);
+
+      window.addEventListener("message", onMsg);
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_AUTO_EXPAND_UPGRADE",
+        reqId: reqId,
+      }, "*");
+    });
+  }
+  S.autoExpandUpgradeBridge = autoExpandUpgradeBridge;
+
   // Lắng nghe message từ page-bridge.js
   let daBaoBridgeReady = false;
   window.addEventListener("message", (event) => {

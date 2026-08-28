@@ -32,8 +32,11 @@
     { id: "deliveries", ten: "16. Giao Đơn Hàng Tàu/NPC", featureId: 13, fn: () => S.tickDeliveries?.() },
     { id: "poppy_bounties", ten: "17. Giao Bounties Poppy (Plaza)", featureId: 16, fn: () => S.tickPoppyBounties?.() },
     { id: "weekly_chores", ten: "18. Nhận Thưởng Nhiệm Vụ Tuần (Chores)", featureId: 17, fn: () => S.tickWeeklyChores?.() },
-    { id: "season_milestones", ten: "19. Nhận Quà Mốc Điểm Season (Track)", featureId: 18, fn: () => S.tickSeasonMilestones?.() },
     { id: "treasure_chest", ten: "20. Mở Rương Kho Báu (Chests)", featureId: 19, fn: () => S.tickTreasureChest?.() },
+    // ── CÂU CÁ, CÀO MUỐI, MỎ DẦU & PHÁT TRIỂN NÔNG TRẠI ──
+    { id: "fishing", ten: "21. Tự Động Câu Cá (Fishing)", featureId: 20, fn: () => S.tickFishing?.() },
+    { id: "salt_mining", ten: "22. Cào Muối & Đào Mỏ Dầu", featureId: 21, fn: () => S.tickSaltMining?.() },
+    { id: "land_expansion", ten: "23. Mở Rộng Đất & Nâng Đảo", featureId: 22, fn: () => S.tickLandExpansion?.() },
   ];
 
   function layTaiLieuGame() {

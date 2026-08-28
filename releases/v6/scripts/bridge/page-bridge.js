@@ -3126,6 +3126,235 @@
       return;
     }
 
+    // TỰ ĐỘNG CÂU CÁ (AUTO FISHING)
+    if (data.type === "SFL_AUTO_FISHING") {
+      const svc = findGameService();
+      let ok = false;
+      let error = null;
+      let castCount = 0;
+      const caughtList = [];
+
+      if (svc) {
+        try {
+          const state = svc.state?.context?.state;
+          const inv = state?.inventory || {};
+          let rodCount = toSafeNumber(inv.Rod);
+
+          const BAIT_PRIORITY = ["Fishing Lure", "Grub", "Red Wiggler", "Earthworm"];
+          const invSim = {};
+          for (const [k, v] of Object.entries(inv)) {
+            invSim[k] = toSafeNumber(v);
+          }
+
+          // Tính số lượt câu còn lại hôm nay (Daily Limit)
+          const nowStr = new Date().toISOString().split("T")[0];
+          const dailyAttempts = state?.fishing?.dailyAttempts?.[nowStr] || 0;
+          const extraReels = state?.fishing?.extraReels?.count || 0;
+          const maxReels = 20; // Giới hạn cơ bản hàng ngày
+          let reelsLeft = Math.max(0, maxReels - dailyAttempts) + extraReels;
+
+          while (reelsLeft > 0 && rodCount > 0) {
+            // Tìm mồi câu tốt nhất đang có trong kho
+            const availableBait = BAIT_PRIORITY.find((b) => (invSim[b] || 0) > 0);
+            if (!availableBait) break;
+
+            try {
+              svc.send({
+                type: "rod.casted",
+                bait: availableBait,
+                multiplier: 1,
+              });
+
+              invSim[availableBait] = Math.max(0, (invSim[availableBait] || 0) - 1);
+              rodCount = Math.max(0, rodCount - 1);
+              reelsLeft = Math.max(0, reelsLeft - 1);
+              castCount++;
+              caughtList.push({ bait: availableBait });
+            } catch (errCast) {
+              console.warn("[SFL Bridge Fishing Error]", errCast);
+              break;
+            }
+          }
+
+          if (castCount > 0) {
+            ok = true;
+            try { svc.send({ type: "SAVE" }); } catch (_e) {}
+          }
+        } catch (e) {
+          error = e?.message || String(e);
+        }
+      } else {
+        error = "no_service";
+      }
+
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_AUTO_FISHING_RESULT",
+        reqId: data.reqId,
+        ok,
+        error,
+        castCount,
+        caughtList,
+      }, "*");
+      return;
+    }
+
+    // TỰ ĐỘNG CÀO MUỐI & ĐÀO MỎ DẦU (SALT & OIL HARVESTING)
+    if (data.type === "SFL_HARVEST_SALT_OIL") {
+      const svc = findGameService();
+      let ok = false;
+      let error = null;
+      let saltHarvested = 0;
+      let oilDrilled = 0;
+      let saltFarmUpgraded = false;
+
+      if (svc) {
+        try {
+          const state = svc.state?.context?.state;
+          const inv = state?.inventory || {};
+          const now = Date.now();
+
+          // 1. Thu hoạch Muối (Salt Farm Nodes)
+          const saltNodes = state?.saltFarm?.nodes || {};
+          let saltRakes = toSafeNumber(inv["Salt Rake"]);
+
+          for (const [nodeId, nodeData] of Object.entries(saltNodes)) {
+            if (saltRakes <= 0) break;
+            const storedCharges = Number(nodeData?.salt?.storedCharges ?? 0);
+            const nextChargeAt = Number(nodeData?.salt?.nextChargeAt ?? 0);
+            const isReady = storedCharges > 0 || (nextChargeAt > 0 && nextChargeAt <= now);
+
+            if (isReady) {
+              try {
+                svc.send({
+                  type: "salt.harvested",
+                  id: String(nodeId),
+                });
+                saltRakes--;
+                saltHarvested++;
+              } catch (errSalt) {
+                console.warn("[SFL Bridge Salt Error]", nodeId, errSalt);
+              }
+            }
+          }
+
+          // 2. Đào Mỏ Dầu (Oil Reserves)
+          const oilReserves = state?.oilReserves || {};
+          let drills = toSafeNumber(inv.Drill) + toSafeNumber(inv["Oil Drill"]);
+
+          for (const [resId, resData] of Object.entries(oilReserves)) {
+            if (drills <= 0) break;
+            const drilledAt = Number(resData?.drilledAt ?? 0);
+            // 20 tiếng hồi mỏ dầu
+            const isOilReady = !drilledAt || now - drilledAt >= 20 * 60 * 60 * 1000;
+
+            if (isOilReady) {
+              try {
+                svc.send({
+                  type: "oilReserve.drilled",
+                  id: String(resId),
+                });
+                drills--;
+                oilDrilled++;
+              } catch (errOil) {
+                console.warn("[SFL Bridge Oil Error]", resId, errOil);
+              }
+            }
+          }
+
+          // 3. Tự động Nâng cấp Trại Muối nếu đủ điều kiện
+          try {
+            const curLevel = Number(state?.saltFarm?.level ?? 0);
+            if (curLevel < 4) {
+              svc.send({ type: "saltFarm.upgraded" });
+              saltFarmUpgraded = true;
+            }
+          } catch (_eUpgrade) {}
+
+          if (saltHarvested > 0 || oilDrilled > 0 || saltFarmUpgraded) {
+            ok = true;
+            try { svc.send({ type: "SAVE" }); } catch (_e) {}
+          }
+        } catch (e) {
+          error = e?.message || String(e);
+        }
+      } else {
+        error = "no_service";
+      }
+
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_HARVEST_SALT_OIL_RESULT",
+        reqId: data.reqId,
+        ok,
+        error,
+        saltHarvested,
+        oilDrilled,
+        saltFarmUpgraded,
+      }, "*");
+      return;
+    }
+
+    // TỰ ĐỘNG MỞ RỘNG Ô ĐẤT & NÂNG CẤP ĐẢO (LAND EXPANSION & ISLAND UPGRADE)
+    if (data.type === "SFL_AUTO_EXPAND_UPGRADE") {
+      const svc = findGameService();
+      let ok = false;
+      let error = null;
+      let landExpanded = false;
+      let landRevealed = false;
+      let farmUpgraded = false;
+
+      if (svc) {
+        try {
+          const farmId = Number(svc.state?.context?.farmId || 0);
+
+          // 1. Kiểm tra hoàn thành mở rộng đất đang chờ nhận (Reveal)
+          try {
+            svc.send({ type: "landExpansion.revealed" });
+            landRevealed = true;
+          } catch (_eRev) {}
+
+          // 2. Thử Mở rộng thêm ô đất mới (Expand Land)
+          try {
+            svc.send({
+              type: "land.expanded",
+              farmId: farmId,
+            });
+            landExpanded = true;
+          } catch (_eExp) {}
+
+          // 3. Thử Nâng cấp Đảo mới khi đạt mốc tối đa (Farm Upgrade)
+          try {
+            svc.send({
+              type: "farm.upgraded",
+            });
+            farmUpgraded = true;
+          } catch (_eFarm) {}
+
+          if (landExpanded || landRevealed || farmUpgraded) {
+            ok = true;
+            try { svc.send({ type: "SAVE" }); } catch (_e) {}
+          }
+        } catch (e) {
+          error = e?.message || String(e);
+        }
+      } else {
+        error = "no_service";
+      }
+
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_AUTO_EXPAND_UPGRADE_RESULT",
+        reqId: data.reqId,
+        ok,
+        error,
+        landExpanded,
+        landRevealed,
+        farmUpgraded,
+      }, "*");
+      return;
+    }
+
     if (data.type === "SFL_GET_STATE") {
       const statePayload = buildStatePayload();
       window.postMessage({

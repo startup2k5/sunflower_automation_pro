@@ -112,6 +112,24 @@ const FEATURES = [
     icon: "🗝️",
     title: "Tự động Mở Khóa Rương Kho Báu (Treasure Chests)",
     default: true
+  },
+  {
+    id: 20,
+    icon: "🎣",
+    title: "Tự động Câu Cá Hàng Ngày (Auto Fishing)",
+    default: true
+  },
+  {
+    id: 21,
+    icon: "🧂",
+    title: "Tự động Cào Muối & Khai Thác Mỏ Dầu",
+    default: true
+  },
+  {
+    id: 22,
+    icon: "🏝️",
+    title: "Tự động Mở Rộng Đất & Nâng Cấp Đảo",
+    default: true
   }
 ];
 
