@@ -225,6 +225,20 @@
           }
         }
 
+        // Bỏ qua luồng Hoa nếu không có hoa nở và không đủ hạt giống/nguyên liệu trồng
+        if (luongObj.id === "flowers") {
+          const state = S.gameState;
+          const flowerBeds = (state?.resources?.flowers?.list || []).filter((b) => b && (b.x !== undefined || b.y !== undefined));
+          const hasReady = flowerBeds.some((b) => b.isReady);
+          const hasEmpty = flowerBeds.some((b) => !b.plantedAt || b.name === "Empty");
+          const inv = state?.inventory || S.userData?.inventory || {};
+          const FLOWER_SEEDS = ["Sunpetal Seed", "Bloom Seed", "Lily Seed", "Edelweiss Seed", "Gladiolus Seed", "Lavender Seed", "Clover Seed"];
+          const hasSeed = FLOWER_SEEDS.some((s) => Number(inv[s] || 0) >= 1);
+          if (!hasReady && (!hasEmpty || !hasSeed)) {
+            continue;
+          }
+        }
+
         // 1. Kiểm tra và giải Captcha trước mỗi bước (ĐÓNG BĂNG TUYỆT ĐỐI, KHÔNG ĐƯỢC CHUYỂN LUỒNG)
         while (typeof S.isCaptchaOpen === "function" && S.isCaptchaOpen()) {
           console.log("%c[SFL Điều Phối] 🚨 Đang có Captcha trên màn hình! Đóng băng hệ thống để tập trung giải...", "color: #ff3838; font-weight: bold; font-size: 13px;");

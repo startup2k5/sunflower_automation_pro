@@ -1,13 +1,68 @@
 // ═══════════════════════════════════════════════════════════════════
 // LUỒNG CHĂM SÓC & TRỒNG HOA TOÀN DIỆN (flowers.js)
 // Thu hoạch hoa nở & Tự động gieo trồng hoa theo mùa vụ kèm thụ phấn chéo (Crossbreeding)
-// CHỈ XỬ LÝ CÁC LUỐNG HOA ĐÃ ĐẶT TRÊN MAP (BỎ QUA LUỐNG TRONG KHO ĐỒ)
+// TỰ ĐỘNG BỎ QUA NGAY KHI HẾT HẠT GIỐNG HOẶC NGUYÊN LIỆU THỤ PHẤN (KHÔNG SPAM CLICK)
 // ═══════════════════════════════════════════════════════════════════
 (function (S) {
   "use strict";
 
   let dangBan = false;
   const ngu = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  // Danh mục hạt giống hoa
+  const FLOWER_SEEDS = [
+    "Sunpetal Seed", "Bloom Seed", "Lily Seed",
+    "Edelweiss Seed", "Gladiolus Seed", "Lavender Seed", "Clover Seed"
+  ];
+
+  // Danh mục nguyên liệu thụ phấn Set 1
+  const SET_1_CROSSBREEDS = [
+    { name: "Sunflower", amount: 50 },
+    { name: "Beetroot", amount: 10 },
+    { name: "Cauliflower", amount: 5 },
+    { name: "Parsnip", amount: 5 },
+    { name: "Eggplant", amount: 5 },
+    { name: "Radish", amount: 5 },
+    { name: "Kale", amount: 5 },
+    { name: "Blueberry", amount: 3 },
+    { name: "Apple", amount: 3 },
+    { name: "Banana", amount: 3 },
+    { name: "Red Pansy", amount: 1 }, { name: "Yellow Pansy", amount: 1 }, { name: "Purple Pansy", amount: 1 }, { name: "White Pansy", amount: 1 }, { name: "Blue Pansy", amount: 1 },
+    { name: "Red Cosmos", amount: 1 }, { name: "Yellow Cosmos", amount: 1 }, { name: "Purple Cosmos", amount: 1 }, { name: "White Cosmos", amount: 1 }, { name: "Blue Cosmos", amount: 1 },
+    { name: "Prism Petal", amount: 1 },
+    { name: "Red Balloon Flower", amount: 1 }, { name: "Yellow Balloon Flower", amount: 1 }, { name: "Purple Balloon Flower", amount: 1 }, { name: "White Balloon Flower", amount: 1 }, { name: "Blue Balloon Flower", amount: 1 },
+    { name: "Red Daffodil", amount: 1 }, { name: "Yellow Daffodil", amount: 1 }, { name: "Purple Daffodil", amount: 1 }, { name: "White Daffodil", amount: 1 }, { name: "Blue Daffodil", amount: 1 },
+    { name: "Celestial Frostbloom", amount: 1 },
+    { name: "Red Carnation", amount: 1 }, { name: "Yellow Carnation", amount: 1 }, { name: "Purple Carnation", amount: 1 }, { name: "White Carnation", amount: 1 }, { name: "Blue Carnation", amount: 1 },
+    { name: "Red Lotus", amount: 1 }, { name: "Yellow Lotus", amount: 1 }, { name: "Purple Lotus", amount: 1 }, { name: "White Lotus", amount: 1 }, { name: "Blue Lotus", amount: 1 },
+    { name: "Primula Enigma", amount: 1 }
+  ];
+
+  // Danh mục nguyên liệu thụ phấn Set 2
+  const SET_2_CROSSBREEDS = [
+    { name: "Rhubarb", amount: 25 },
+    { name: "Pepper", amount: 15 },
+    { name: "Onion", amount: 10 },
+    { name: "Artichoke", amount: 8 },
+    { name: "Barley", amount: 5 },
+    { name: "Red Edelweiss", amount: 1 }, { name: "Yellow Edelweiss", amount: 1 }, { name: "Purple Edelweiss", amount: 1 }, { name: "White Edelweiss", amount: 1 }, { name: "Blue Edelweiss", amount: 1 },
+    { name: "Red Gladiolus", amount: 1 }, { name: "Yellow Gladiolus", amount: 1 }, { name: "Purple Gladiolus", amount: 1 }, { name: "White Gladiolus", amount: 1 }, { name: "Blue Gladiolus", amount: 1 },
+    { name: "Red Lavender", amount: 1 }, { name: "Yellow Lavender", amount: 1 }, { name: "Purple Lavender", amount: 1 }, { name: "White Lavender", amount: 1 }, { name: "Blue Lavender", amount: 1 },
+    { name: "Red Clover", amount: 1 }, { name: "Yellow Clover", amount: 1 }, { name: "Purple Clover", amount: 1 }, { name: "White Clover", amount: 1 }, { name: "Blue Clover", amount: 1 }
+  ];
+
+  // Kiểm tra kho có đủ hạt giống hoa VÀ nguyên liệu thụ phấn không
+  function kiemTraDuDieuKienTrongHoa(state) {
+    const inv = state?.inventory || S.userData?.inventory || {};
+    const hasSeed = FLOWER_SEEDS.some((s) => Number(inv[s] || 0) >= 1);
+    if (!hasSeed) return false;
+
+    // Kiểm tra có ít nhất 1 loại nguyên liệu thụ phấn đủ số lượng
+    const hasSet1Material = SET_1_CROSSBREEDS.some((cb) => Number(inv[cb.name] || 0) >= cb.amount);
+    const hasSet2Material = SET_2_CROSSBREEDS.some((cb) => Number(inv[cb.name] || 0) >= cb.amount);
+
+    return hasSet1Material || hasSet2Material;
+  }
 
   function layTaiLieuGame() {
     const out = [];
@@ -146,6 +201,29 @@
   async function tickFlowerAction() {
     if (dangBan) return false;
 
+    // 0. Kiểm tra nhanh trạng thái State
+    let state = S.gameState;
+    if (typeof S.requestBridgeState === "function") {
+      try {
+        state = await S.requestBridgeState(800);
+      } catch (_e) {}
+    }
+    if (!state) state = S.gameState;
+
+    const rawBeds = state?.resources?.flowers?.list || [];
+    const flowerBeds = rawBeds.filter((b) => b && (b.x !== undefined || b.y !== undefined));
+    const readyBeds = flowerBeds.filter((b) => b.isReady);
+    const emptyBeds = flowerBeds.filter((b) => !b.plantedAt || b.name === "Empty");
+    const duDieuKienTrong = kiemTraDuDieuKienTrongHoa(state);
+
+    // NẾU KHÔNG CÓ HOA CHÍN VÀ (KHÔNG CÓ Ô TRỐNG HOẶC KHÔNG ĐỦ HẠT GIỐNG/NGUYÊN LIỆU) -> BỎ QUA NGAY
+    if (readyBeds.length === 0 && (emptyBeds.length === 0 || !duDieuKienTrong)) {
+      if (emptyBeds.length > 0 && !duDieuKienTrong) {
+        console.log(`%c[SFL Hoa] ℹ️ Có ${emptyBeds.length} luống hoa trống nhưng đã hết hạt giống hoa hoặc nguyên liệu thụ phấn -> Bỏ qua luồng hoa.`, "color: #9e9e9e;");
+      }
+      return false;
+    }
+
     // 1. Khóa độc quyền luồng hoa
     if (typeof S.xinKhoa === "function" && !S.xinKhoa("flowers")) {
       return false;
@@ -157,75 +235,65 @@
         return false;
       }
 
-      // 1. Lấy dữ liệu Game State tươi mới qua Bridge
-      let state = S.gameState;
-      if (typeof S.requestBridgeState === "function") {
-        try {
-          state = await S.requestBridgeState(1500);
-        } catch (_e) {}
-      }
+      let daLamBridge = false;
 
-      const rawBeds = state?.resources?.flowers?.list || [];
-      const flowerBeds = rawBeds.filter((b) => b && (b.x !== undefined || b.y !== undefined));
+      // A. THU HOẠCH HOA NỞ (Ready Flowers)
+      if (readyBeds.length > 0) {
+        const tenHoa = readyBeds.map((b) => b.name).join(", ");
+        console.log(`%c[SFL Hoa] 🌸 Tìm thấy ${readyBeds.length} luống hoa đã nở (${tenHoa})! Tiến hành thu hoạch qua Game Bridge...`, "color: #00bcd4; font-weight: bold;");
 
-      if (flowerBeds.length > 0) {
-        let daLamBridge = false;
-
-        // A. THU HOẠCH HOA NỞ (Ready Flowers)
-        const readyBeds = flowerBeds.filter((b) => b.isReady);
-        if (readyBeds.length > 0) {
-          const tenHoa = readyBeds.map((b) => b.name).join(", ");
-          console.log(`%c[SFL Hoa] 🌸 Tìm thấy ${readyBeds.length} luống hoa đã nở (${tenHoa})! Tiến hành thu hoạch qua Game Bridge...`, "color: #00bcd4; font-weight: bold;");
-
-          if (typeof S.harvestFlowersBridge === "function") {
-            const resH = await S.harvestFlowersBridge(readyBeds.map((b) => b.id), 2500);
-            if (resH && resH.ok) {
-              console.log(`%c[SFL Hoa] 🎉 Thu hoạch thành công ${resH.harvestedCount || readyBeds.length} luống hoa nở!`, "color: #00e676; font-weight: bold; font-size: 13px;");
-              daLamBridge = true;
-            }
+        if (typeof S.harvestFlowersBridge === "function") {
+          const resH = await S.harvestFlowersBridge(readyBeds.map((b) => b.id), 2500);
+          if (resH && resH.ok) {
+            console.log(`%c[SFL Hoa] 🎉 Thu hoạch thành công ${resH.harvestedCount || readyBeds.length} luống hoa nở!`, "color: #00e676; font-weight: bold; font-size: 13px;");
+            daLamBridge = true;
           }
         }
+      }
 
-        // B. GIEO TRỒNG HOA VÀO CÁC LUỐNG TRỐNG (Empty Flower Beds)
-        const emptyBeds = flowerBeds.filter((b) => !b.plantedAt || b.name === "Empty");
-        if (emptyBeds.length > 0) {
-          console.log(`%c[SFL Hoa] 🌱 Tìm thấy ${emptyBeds.length} luống hoa trống trên đảo! Tiến hành gieo trồng & thụ phấn chéo qua Game Bridge...`, "color: #ff9800; font-weight: bold;");
+      // B. GIEO TRỒNG HOA VÀO CÁC LUỐNG TRỐNG (Empty Flower Beds)
+      if (emptyBeds.length > 0 && duDieuKienTrong) {
+        console.log(`%c[SFL Hoa] 🌱 Tìm thấy ${emptyBeds.length} luống hoa trống trên đảo! Tiến hành gieo trồng & thụ phấn chéo qua Game Bridge...`, "color: #ff9800; font-weight: bold;");
 
-          if (typeof S.plantFlowersBridge === "function") {
-            const resP = await S.plantFlowersBridge(emptyBeds.map((b) => b.id), 2500);
-            if (resP && resP.ok && resP.plantedCount > 0) {
-              const details = (resP.plantedDetails || []).map((d) => `${d.seed} (+${d.amount} ${d.crossbreed})`).join(" | ");
-              console.log(
-                `%c[SFL Hoa] 🎉 ĐÃ GIEO TRỒNG THÀNH CÔNG ${resP.plantedCount} LUỐNG HOA MỚI! (${details})`,
-                "color: #00e676; font-weight: bold; font-size: 13px;"
-              );
-              daLamBridge = true;
-            } else {
-              console.log(`[SFL Hoa] ℹ️ Có ${emptyBeds.length} luống hoa trống nhưng trong kho chưa đủ hạt giống hoa hoặc nông sản thụ phấn chéo.`);
-            }
+        if (typeof S.plantFlowersBridge === "function") {
+          const resP = await S.plantFlowersBridge(emptyBeds.map((b) => b.id), 2500);
+          if (resP && resP.ok && resP.plantedCount > 0) {
+            const details = (resP.plantedDetails || []).map((d) => `${d.seed} (+${d.amount} ${d.crossbreed})`).join(" | ");
+            console.log(
+              `%c[SFL Hoa] 🎉 ĐÃ GIEO TRỒNG THÀNH CÔNG ${resP.plantedCount} LUỐNG HOA MỚI! (${details})`,
+              "color: #00e676; font-weight: bold; font-size: 13px;"
+            );
+            daLamBridge = true;
+          } else {
+            console.log(`[SFL Hoa] ℹ️ Đã hết hạt giống hoa hoặc nông sản thụ phấn chéo -> Dừng gieo hoa.`);
           }
         }
-
-        if (daLamBridge) return true;
-        if (readyBeds.length === 0 && emptyBeds.length === 0) return false;
       }
 
-      // 2. FALLBACK DOM NẾU CẦN
-      const luongs = timLuongHoaDOM();
-      if (luongs.length === 0) return false;
+      if (daLamBridge) return true;
 
-      let daLam = 0;
-      for (const l of luongs) {
-        if (typeof S.isCaptchaOpen === "function" && S.isCaptchaOpen()) {
-          S.__captchaInterrupted = true;
-          break;
+      // NẾU ĐÃ HẾT HẠT HOẶC NGUYÊN LIỆU -> TUYỆT ĐỐI KHÔNG CLICK DOM BỪA BÃI
+      if (!duDieuKienTrong && readyBeds.length === 0) {
+        return false;
+      }
+
+      // 2. FALLBACK DOM NẾU CÓ HOA CHÍN CẦN THU HOẠCH MÀ BRIDGE CHƯA XỬ LÝ ĐƯỢC
+      if (readyBeds.length > 0) {
+        const luongs = timLuongHoaDOM();
+        let daLam = 0;
+        for (const l of luongs) {
+          if (typeof S.isCaptchaOpen === "function" && S.isCaptchaOpen()) {
+            S.__captchaInterrupted = true;
+            break;
+          }
+          clickTam(l);
+          daLam++;
+          await ngu(300 + Math.floor(Math.random() * 100));
         }
-        clickTam(l);
-        daLam++;
-        await ngu(300 + Math.floor(Math.random() * 100));
+        return daLam > 0;
       }
 
-      return daLam > 0;
+      return false;
     } catch (err) {
       console.error("[SFL Hoa] Lỗi:", err);
       return false;
