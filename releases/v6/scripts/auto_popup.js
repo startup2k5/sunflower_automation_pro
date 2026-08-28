@@ -150,6 +150,11 @@
   async function kiemTraVaXuLyPopupSongSong() {
     if (dangXuLy) return;
 
+    // Kiểm tra cấu hình bật/tắt từ Popup UI (featureId: 1)
+    if (S.cauHinh && S.cauHinh[1] === false) {
+      return;
+    }
+
     // Nếu Captcha đang mở -> Nhường quyền 100% cho bộ giải Captcha chuyên dụng
     if (typeof S.isCaptchaOpen === "function" && S.isCaptchaOpen()) {
       return;

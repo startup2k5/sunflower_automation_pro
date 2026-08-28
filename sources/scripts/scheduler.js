@@ -12,8 +12,8 @@
   // Danh sách 15 luồng tuần tự nghiêm ngặt (kèm featureId khớp Popup UI)
   const CAC_LUONG = [
     { id: "load_data", ten: "1. Quét Dữ Liệu", fn: () => S.loadData?.(false) },
-    { id: "checkin", ten: "2. Check-in Rương & Thuyền", fn: () => S.tickCheckin?.() },
-    { id: "tools_buy", ten: "3. Mua Công Cụ Đủ Điều Kiện", fn: () => S.tickToolsBuy?.() },
+    { id: "checkin", ten: "2. Check-in Rương & Thuyền", featureId: 14, fn: () => S.tickCheckin?.() },
+    { id: "tools_buy", ten: "3. Mua Công Cụ Đủ Điều Kiện", featureId: 15, fn: () => S.tickToolsBuy?.() },
     { id: "seeds_buy", ten: "4. Mua Hạt Giống Theo Mùa", featureId: 9, fn: () => S.tickSeedsBuy?.() },
     // ── CHU KỲ CANH TÁC RUỘNG ĐẤT BẮT BUỘC ──
     { id: "crops_harvest", ten: "5. Thu Hoạch Ruộng", featureId: 7, fn: () => S.tickCropHarvest?.() },
@@ -22,12 +22,13 @@
     { id: "crops_plant", ten: "8. Gieo Hạt Theo Mùa", featureId: 7, fn: () => S.tickCropPlant?.() },
     // ── CÁC TÀI NGUYÊN & HOẠT ĐỘNG KHÁC ──
     { id: "mushrooms", ten: "9. Nhặt Nấm Rừng", featureId: 4, fn: () => S.tickThuHoachNam?.() },
-    { id: "flowers", ten: "10. Chăm Sóc Hoa", featureId: 8, fn: () => S.tickFlowerAction?.() },
+    { id: "flowers", ten: "10. Chăm Sóc & Trồng Hoa", featureId: 8, fn: () => S.tickFlowerAction?.() },
     { id: "honey", ten: "11. Thu Hoạch Mật Ong", featureId: 3, fn: () => S.tickHoney?.() },
     { id: "wood", ten: "12. Chặt Cây Lấy Gỗ", featureId: 5, fn: () => S.tickWoodChop?.() },
     { id: "mining", ten: "13. Đào Khoáng Sản & Dầu", featureId: 6, fn: () => S.tickMining?.() },
-    { id: "fruit_tree", ten: "14. Cây Ăn Quả", featureId: 11, fn: () => S.tickFruitTree?.() },
-    { id: "cooking", ten: "15. Nấu Ăn & Chế Biến", fn: () => S.tickCooking?.() },
+    { id: "fruit_tree", ten: "14. Cây Ăn Quả (Thu hoạch & Trồng)", featureId: 11, fn: () => S.tickFruitTree?.() },
+    { id: "cooking", ten: "15. Nấu Ăn & Chế Biến", featureId: 12, fn: () => S.tickCooking?.() },
+    { id: "deliveries", ten: "16. Giao Đơn Hàng Tàu/NPC", featureId: 13, fn: () => S.tickDeliveries?.() },
   ];
 
   function layTaiLieuGame() {

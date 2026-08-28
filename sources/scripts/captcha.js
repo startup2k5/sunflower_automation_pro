@@ -500,6 +500,11 @@
   async function kiemTraVaGiaiCaptcha() {
     if (!isCaptchaOpen()) return true;
 
+    // Kiểm tra cấu hình bật/tắt từ Popup UI (featureId: 2)
+    if (S.cauHinh && S.cauHinh[2] === false) {
+      return true;
+    }
+
     // Chiếm khóa ưu tiên cao nhất
     if (typeof S.xinKhoa === "function" && !S.xinKhoa("captcha")) {
       return false;
