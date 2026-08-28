@@ -2329,9 +2329,26 @@
           };
 
           const allowedNames = SEASONAL_SEEDS_MAP[season] || SEASONAL_SEEDS_MAP.spring;
-          // Lọc danh sách hạt giống đúng mùa và sắp xếp TỪ RẺ ĐẾN ĐẮT (price ASCENDING)
+          const bumpkinExp = toSafeNumber(state?.bumpkin?.experience);
+          function tinhLevelBumpkin(exp) {
+            const expNum = Number(exp || 0);
+            const levels = [
+              [100, 5293405], [90, 4213405], [80, 3253405], [70, 2413405], [60, 1693405],
+              [50, 1093405], [40, 480405], [35, 320405], [30, 205405], [25, 122905],
+              [20, 64155], [16, 33655], [15, 27905], [14, 22905], [13, 18405],
+              [12, 14405], [11, 10905], [10, 7905], [9, 5405], [8, 3405],
+              [7, 2155], [6, 1155], [5, 555], [4, 205], [3, 22], [2, 2], [1, 0]
+            ];
+            for (const [lvl, minExp] of levels) {
+              if (expNum >= minExp) return lvl;
+            }
+            return 1;
+          }
+          const bumpkinLevel = tinhLevelBumpkin(bumpkinExp);
+
+          // Lọc danh sách hạt giống đúng mùa VÀ ĐỦ ĐIỀU KIỆN LEVEL BUMPKIN, sắp xếp TỪ RẺ ĐẾN ĐẮT
           const seasonalCandidates = ALL_SEEDS_CATALOG
-            .filter((s) => allowedNames.includes(s.name))
+            .filter((s) => allowedNames.includes(s.name) && bumpkinLevel >= s.level)
             .sort((a, b) => a.price - b.price);
 
           const hasKuebiko = !!(collectibles["Kuebiko"] && collectibles["Kuebiko"].length);
