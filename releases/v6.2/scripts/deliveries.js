@@ -149,11 +149,47 @@
 
       const isVip = !!state?.user?.isVip;
       const loaiTaiKhoan = isVip ? "👑 TÀI KHOẢN VIP (+2 Tickets Thưởng)" : "🌾 TÀI KHOẢN THƯỜNG";
+      const orders = state?.orders || [];
+      const inv = state?.inventory || {};
+      const coins = Number(state?.user?.coins ?? state?.coins ?? 0);
+      const sfl = Number(state?.user?.balanceSFL ?? state?.balance ?? 0);
+      const now = Date.now();
 
       console.log(
-        `%c[SFL Giao Đơn Hàng v6.2] 📦 Bắt đầu quét đơn hàng NPC / Thuyền (${loaiTaiKhoan})...`,
+        `%c[SFL Giao Đơn Hàng v6.2] 📦 Quét ${orders.length} đơn hàng NPC / Thuyền (${loaiTaiKhoan})...`,
         isVip ? "color: #ffd700; font-weight: bold; font-size: 13px;" : "color: #00bcd4; font-weight: bold; font-size: 13px;"
       );
+
+      // Hiển thị bảng chi tiết trạng thái tất cả các đơn hàng trong game
+      if (orders.length > 0) {
+        const orderSummary = orders.map((ord) => {
+          let du = true;
+          const reqList = [];
+          for (const [item, reqQty] of Object.entries(ord.items || {})) {
+            const numReq = Number(reqQty || 0);
+            let inStock = 0;
+            if (item === "coins") inStock = coins;
+            else if (item === "sfl") inStock = sfl;
+            else inStock = Number(inv[item] || 0);
+
+            const okItem = inStock >= numReq;
+            if (!okItem) du = false;
+            reqList.push(`${item}: ${inStock}/${numReq} ${okItem ? "✔️" : "❌"}`);
+          }
+
+          let trangThai = "⏳ Chờ nguyên liệu";
+          if (ord.completedAt) trangThai = "✅ Đã giao";
+          else if (ord.readyAt && ord.readyAt > now) trangThai = "⏰ Chưa đến giờ";
+          else if (du) trangThai = "🚀 Đủ hàng (Có thể giao)";
+
+          return {
+            "Khách Hàng": (ord.from || "NPC").toUpperCase(),
+            "Yêu Cầu (Kho/Cần)": reqList.join(" | "),
+            "Trạng Thái": trangThai,
+          };
+        });
+        console.table(orderSummary);
+      }
 
       // ── 1. ƯU TIÊN 100% GAME BRIDGE: GIAO TOÀN BỘ ĐƠN ĐỦ ĐIỀU KIỆN SIÊU TỐC ──
       if (typeof S.deliverOrdersBridge === "function") {
@@ -187,7 +223,7 @@
           );
           return true;
         } else {
-          console.log(`[SFL Giao Đơn Hàng] ℹ️ Không có đơn hàng nào đủ 100% nguyên liệu trong kho để giao tại thời điểm này.`);
+          console.log(`[SFL Giao Đơn Hàng] ℹ️ Hiện chưa có đơn hàng nào đủ 100% nguyên liệu trong kho để giao.`);
         }
       }
 
