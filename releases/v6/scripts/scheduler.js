@@ -140,18 +140,83 @@
     await ngu(150);
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // BỘ PHÁT HIỆN GAME LOAD XONG 100% VÀ ĐỢI 5S ỔN ĐỊNH
+  // ═══════════════════════════════════════════════════════════════════
+  function kiemTraGameDaLoadXong() {
+    // 1. Kiểm tra qua Game Bridge State Machine
+    if (S.gameState && S.gameState.inventory && (S.gameState.bumpkin || S.gameState.island || S.gameState.resources)) {
+      return true;
+    }
+    if (S.gameService && typeof S.gameService.state?.matches === "function") {
+      if (S.gameService.state.matches("playing")) return true;
+    }
+
+    // 2. Kiểm tra qua Canvas và HUD trên DOM
+    const docs = layTaiLieuGame();
+    for (const doc of docs) {
+      if (!doc || !doc.body) continue;
+      const canvas = doc.querySelector("canvas");
+      const hasCanvasReady = canvas && canvas.width > 100 && canvas.height > 100;
+      const hasIslandMap = !!doc.querySelector('[data-map-placement], [data-placement-name], .world-map');
+      const hasHud = !!doc.querySelector('img[src*="basket"], img[src*="chest.png"], [aria-label="Settings"]');
+
+      // Kiểm tra có đang bị màn hình Loading che không
+      const txt = (doc.body.textContent || "").toLowerCase();
+      const dangLoading = (txt.includes("connecting to island") || txt.includes("loading island") || (txt.includes("loading...") && !hasIslandMap));
+
+      if (hasCanvasReady && (hasIslandMap || hasHud) && !dangLoading) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  async function choGameLoadHoanTatVaOnDinh() {
+    console.log("%c[SFL Khởi Động] ⏳ Đang theo dõi tiến trình tải game Sunflower Land...", "color: #ff9800; font-weight: bold; font-size: 13px;");
+
+    let daLoad = false;
+    let lanDem = 0;
+    while (!daLoad) {
+      if (typeof S.requestBridgeState === "function") {
+        try {
+          const st = await S.requestBridgeState(800);
+          if (st && st.inventory && (st.resources || st.bumpkin || st.user)) {
+            daLoad = true;
+            break;
+          }
+        } catch (_e) {}
+      }
+
+      if (kiemTraGameDaLoadXong()) {
+        daLoad = true;
+        break;
+      }
+
+      lanDem++;
+      if (lanDem % 5 === 0) {
+        console.log("[SFL Khởi Động] ⏳ Game đang tải dữ liệu và bản đồ đảo, vui lòng chờ...");
+      }
+      await ngu(1000);
+    }
+
+    console.log("%c[SFL Khởi Động] 🎮 GAME ĐÃ TẢI XONG 100%! Đang chờ 5s để thế giới game ổn định hoàn toàn trước khi chạy tool...", "color: #00e676; font-weight: bold; font-size: 14px;");
+
+    for (let sec = 5; sec >= 1; sec--) {
+      console.log(`%c[SFL Khởi Động] ⏳ Đang ổn định hệ thống: còn ${sec}s...`, "color: #00bcd4; font-weight: bold;");
+      await ngu(1000);
+    }
+
+    console.log("%c[SFL Khởi Động] 🚀 THẾ GIỚI GAME ĐÃ HOÀN TOÀN ỔN ĐỊNH! KÍCH HOẠT VÒNG ĐIỀU PHỐI AUTO...", "color: #00e676; font-weight: bold; font-size: 14px;");
+  }
+
   // ═══════ VÒNG LẶP ĐIỀU PHỐI TUẦN TỰ ĐỘC QUYỀN (STRICT SEQUENTIAL) ═══════
   async function vongLapChinh() {
     if (dangChayVongLap) return;
     dangChayVongLap = true;
 
-    console.log("%c[SFL Điều Phối] 🚀 KHỞI ĐỘNG HỆ THỐNG ĐIỀU PHỐI TUẦN TỰ 100% (STRICT SEQUENTIAL)...", "color: #00e676; font-weight: bold; font-size: 14px;");
-
-    // Đợi game và dữ liệu State sẵn sàng (tối đa 10s)
-    for (let wait = 0; wait < 20; wait++) {
-      if (S.gameState || document.querySelector('[data-map-placement], #root, canvas')) break;
-      await ngu(500);
-    }
+    // ĐỢI GAME LOAD XONG 100% VÀ ĐỢI 5S ỔN ĐỊNH TRƯỚC KHI CHẠY
+    await choGameLoadHoanTatVaOnDinh();
 
     let soThuTuVongLap = 0;
 
@@ -342,10 +407,10 @@
 
   S.vongDieuPhoi = vongLapChinh;
 
-  // Khởi động sau khi vào game 4 giây (chỉ ở frame game chính)
+  // Khởi động trình theo dõi tiến trình tải game an toàn (chỉ ở frame game chính)
   setTimeout(() => {
     if (window !== window.top && !document.querySelector('#root, [data-map-placement], canvas')) return;
     vongLapChinh();
-  }, 4000);
+  }, 1000);
 
 })(window.SFL = window.SFL || {});
