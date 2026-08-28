@@ -317,7 +317,36 @@
       }, "*");
     });
   }
-  S.bulkFertiliseBridge = bulkFertiliseBridge;
+  // Gieo hạt giống hàng loạt (Bulk Plant) cho toàn bộ ô ruộng rỗng qua Game Bridge
+  function bulkPlantBridge(seedName, timeoutMs = 3000) {
+    return new Promise((resolve) => {
+      const reqId = "bpl_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+      let timer = null;
+
+      function onMsg(ev) {
+        if (ev.source !== window || !ev.data || ev.data._sfl !== true) return;
+        if (ev.data.type === "SFL_BULK_PLANT_RESULT" && ev.data.reqId === reqId) {
+          clearTimeout(timer);
+          window.removeEventListener("message", onMsg);
+          resolve(ev.data);
+        }
+      }
+
+      timer = setTimeout(() => {
+        window.removeEventListener("message", onMsg);
+        resolve({ ok: false, error: "timeout" });
+      }, timeoutMs);
+
+      window.addEventListener("message", onMsg);
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_BULK_PLANT",
+        reqId: reqId,
+        seedName: seedName,
+      }, "*");
+    });
+  }
+  S.bulkPlantBridge = bulkPlantBridge;
 
   // Thu hoạch cây ăn quả chín (Fruit Harvested) qua Game Bridge
   function harvestFruitBridge(patchIds = null, timeoutMs = 2500) {

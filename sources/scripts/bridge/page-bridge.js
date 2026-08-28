@@ -49,15 +49,24 @@
 
   function extractService(input) {
     if (!input || typeof input !== "object") return null;
+    if (typeof input.shortcutItem === "function") {
+      cachedShortcutItem = input.shortcutItem;
+    }
     if (isGameService(input)) return input;
     try {
       for (const key of Object.keys(input)) {
         if (key.startsWith("__")) continue;
         const value = input[key];
+        if (value && typeof value === "object" && typeof value.shortcutItem === "function") {
+          cachedShortcutItem = value.shortcutItem;
+        }
         if (isGameService(value)) return value;
         if (!value || typeof value !== "object") continue;
         for (const sub of Object.keys(value)) {
           if (sub.startsWith("__")) continue;
+          if (value[sub] && typeof value[sub] === "object" && typeof value[sub].shortcutItem === "function") {
+            cachedShortcutItem = value[sub].shortcutItem;
+          }
           if (isGameService(value[sub])) return value[sub];
         }
       }
@@ -80,6 +89,10 @@
       if (!fiberKey) continue;
       let f = el[fiberKey];
       for (let depth = 0; depth < 50 && f; depth++) {
+        const val = f.memoizedProps?.value;
+        if (val && typeof val === "object" && typeof val.shortcutItem === "function") {
+          cachedShortcutItem = val.shortcutItem;
+        }
         const found = extractService(f.memoizedProps) || extractService(f.memoizedState);
         if (found) {
           cachedGameService = found;
@@ -673,35 +686,38 @@
   let cachedShortcutItem = null;
   function findShortcutItemFn() {
     if (typeof cachedShortcutItem === "function") return cachedShortcutItem;
-    const rootEl = document.querySelector("#root") || document.body;
-    if (!rootEl) return null;
-    const fiberKey = Object.keys(rootEl).find(
-      (k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance")
-    );
-    if (!fiberKey) return null;
+    findGameService();
+    if (typeof cachedShortcutItem === "function") return cachedShortcutItem;
 
-    let queue = [rootEl[fiberKey]];
-    let steps = 0;
-    while (queue.length && steps < 8000) {
-      const cur = queue.shift();
-      steps++;
-      if (!cur) continue;
-
-      const val = cur.memoizedProps?.value;
-      if (val && typeof val === "object") {
-        if (typeof val.shortcutItem === "function") {
-          cachedShortcutItem = val.shortcutItem;
-          return cachedShortcutItem;
-        }
-        if (typeof val.setSelectedItem === "function") {
-          cachedShortcutItem = val.setSelectedItem;
-          return cachedShortcutItem;
-        }
+    // 2. Thử tìm trên Phaser Game Registry
+    try {
+      const phaserGame = window.Phaser?.GAMES?.[0] || document.querySelector("canvas")?.__phaserGame;
+      const fn = phaserGame?.registry?.get?.("shortcutItem");
+      if (typeof fn === "function") {
+        cachedShortcutItem = fn;
+        return cachedShortcutItem;
       }
+    } catch (_e) {}
 
-      if (cur.child) queue.push(cur.child);
-      if (cur.sibling) queue.push(cur.sibling);
+    // 3. Thử tìm từ các phần tử DOM trên trang bằng cách duyệt ngược f.return
+    const elements = document.querySelectorAll('[data-map-placement], [role="button"], button, .cursor-pointer, #root');
+    for (let i = 0; i < elements.length; i++) {
+      const el = elements[i];
+      const fiberKey = Object.keys(el).find((k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance"));
+      if (!fiberKey) continue;
+      let f = el[fiberKey];
+      for (let depth = 0; depth < 50 && f; depth++) {
+        const val = f.memoizedProps?.value || f.memoizedProps;
+        if (val && typeof val === "object") {
+          if (typeof val.shortcutItem === "function") {
+            cachedShortcutItem = val.shortcutItem;
+            return cachedShortcutItem;
+          }
+        }
+        f = f.return;
+      }
     }
+
     return null;
   }
 
@@ -711,20 +727,18 @@
     const baseCrop = itemName.toLowerCase().replace(/\s*seed\s*/i, "").trim();
     const imgs = document.querySelectorAll("img");
     for (const img of imgs) {
+      if (img.closest('[role="dialog"], .scrollable, .overflow-y-auto')) continue;
       const src = (img.src || img.getAttribute("src") || "").toLowerCase();
       const alt = (img.alt || img.getAttribute("alt") || "").toLowerCase();
-      const matchSeed =
+      const match =
         src.includes(slug) ||
         (src.includes(baseCrop) && src.includes("seed")) ||
         src.includes(`${baseCrop}_seed`) ||
-        (alt.includes(baseCrop) && alt.includes("seed"));
+        (alt.includes(baseCrop) && alt.includes("seed")) ||
+        (slug.includes("sprout") && (src.includes("sprout_mix") || src.includes("fertiliser"))) ||
+        (slug.includes("rapid") && src.includes("rapid_root"));
 
-      if (
-        matchSeed ||
-        (slug.includes("sprout") && src.includes("sprout_mix")) ||
-        (slug.includes("rapid") && src.includes("rapid_root"))
-      ) {
-        if (img.closest('[role="dialog"], .scrollable, .overflow-y-auto')) continue;
+      if (match) {
         const btn = img.closest("button, [role='button'], div.cursor-pointer, [class*='cursor-pointer']") || img;
         try {
           btn.click();
@@ -1004,12 +1018,18 @@
         if (typeof fn === "function") {
           fn(itemName);
           ok = true;
+          console.log(`%c[SFL Bridge] ✔️ shortcutItem("${itemName}") thành công qua React Context!`, "color: #00e676; font-weight: bold;");
         }
-      } catch (_e) {}
+      } catch (e) {
+        console.warn("[SFL Bridge] shortcutItem lỗi:", e);
+      }
 
       // 2. Thử click trực tiếp trên Hotbar DOM
       if (!ok) {
         ok = selectItemFromHotbar(itemName);
+        if (ok) {
+          console.log(`%c[SFL Bridge] ✔️ Đã click chọn "${itemName}" trên Hotbar DOM!`, "color: #00e676; font-weight: bold;");
+        }
       }
 
       window.postMessage({
@@ -1018,6 +1038,119 @@
         reqId: data.reqId,
         ok: ok,
         itemName: itemName,
+      }, "*");
+      return;
+    }
+
+    if (data.type === "SFL_BULK_FERTILISE") {
+      const svc = findGameService();
+      let ok = false;
+      let count = 0;
+      let error = null;
+
+      if (svc) {
+        try {
+          const snap = svc.getSnapshot();
+          const ctx = snap?.context || snap?.value?.context || {};
+          const state = ctx.state || ctx.gameState || ctx;
+          const fertName = data.fertiliser || "Sprout Mix";
+          let availableFert = toSafeNumber(state?.inventory?.[fertName]);
+
+          if (state && state.crops && availableFert > 0) {
+            const plotIds = Object.keys(state.crops);
+            for (const id of plotIds) {
+              if (availableFert <= 0) break;
+              const plot = state.crops[id];
+              if (!plot) continue;
+              if (plot.fertiliser) continue; // Đã bón phân rồi thì bỏ qua
+
+              try {
+                svc.send({
+                  type: "plot.fertilised",
+                  plotID: String(id),
+                  fertiliser: fertName,
+                });
+                count++;
+                availableFert--;
+              } catch (_e) {}
+            }
+
+            if (count > 0) {
+              ok = true;
+              try { svc.send({ type: "SAVE" }); } catch (_e) {}
+            }
+          }
+        } catch (e) {
+          error = e?.message || String(e);
+        }
+      } else {
+        error = "no_service";
+      }
+
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_BULK_FERTILISE_RESULT",
+        reqId: data.reqId,
+        ok: ok,
+        count: count,
+        error: error,
+      }, "*");
+      return;
+    }
+
+    if (data.type === "SFL_BULK_PLANT") {
+      const svc = findGameService();
+      let ok = false;
+      let count = 0;
+      let error = null;
+
+      if (svc) {
+        try {
+          const snap = svc.getSnapshot();
+          const ctx = snap?.context || snap?.value?.context || {};
+          const state = ctx.state || ctx.gameState || ctx;
+          const seedName = data.seedName;
+          let availableSeeds = toSafeNumber(state?.inventory?.[seedName]);
+
+          if (state && state.crops && availableSeeds > 0) {
+            const plotIds = Object.keys(state.crops);
+            for (const id of plotIds) {
+              if (availableSeeds <= 0) break;
+              const plot = state.crops[id];
+              if (!plot) continue;
+              if (plot.crop) continue; // Đã có cây đang lớn thì bỏ qua
+
+              try {
+                svc.send({
+                  type: "seed.planted",
+                  index: String(id),
+                  item: seedName,
+                  cropId: Math.random().toString(36).slice(2, 10),
+                });
+                count++;
+                availableSeeds--;
+              } catch (_e) {}
+            }
+
+            if (count > 0) {
+              ok = true;
+              try { svc.send({ type: "SAVE" }); } catch (_e) {}
+            }
+          }
+        } catch (e) {
+          error = e?.message || String(e);
+        }
+      } else {
+        error = "no_service";
+      }
+
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_BULK_PLANT_RESULT",
+        reqId: data.reqId,
+        ok: ok,
+        count: count,
+        error: error,
       }, "*");
       return;
     }

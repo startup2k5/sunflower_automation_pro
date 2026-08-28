@@ -319,7 +319,21 @@
         }
       }
 
-      const slot = timSlotSproutMix(doc);
+      let slot = timSlotSproutMix(doc);
+      if (!slot) {
+        // Thử click sub-tab "Fertiliser"
+        const subTabs = doc.querySelectorAll(".flex.items-center.cursor-pointer, button, [role='tab']");
+        for (const st of subTabs) {
+          const stTxt = (st.textContent || "").trim();
+          if (stTxt.includes("Fertiliser") || stTxt.includes("Fertilizer") || !!st.querySelector('img[src*="sprout_mix"], img[src*="fertiliser"]')) {
+            clickTam(st);
+            await ngu(300);
+            break;
+          }
+        }
+        slot = timSlotSproutMix(doc);
+      }
+
       if (slot) {
         console.log(`%c[SFL Bón Phân] 🧪 Đã click chọn ${tenPhan} trong giỏ đồ!`, "color: #4caf50; font-weight: bold;");
         clickTam(slot);

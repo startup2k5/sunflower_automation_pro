@@ -343,7 +343,21 @@
         }
       }
 
-      const slot = timSlotHatGiong(doc, tenHatChon);
+      let slot = timSlotHatGiong(doc, tenHatChon);
+      if (!slot) {
+        // Thử click sub-tab "Seeds"
+        const subTabs = doc.querySelectorAll(".flex.items-center.cursor-pointer, button, [role='tab']");
+        for (const st of subTabs) {
+          const stTxt = (st.textContent || "").trim();
+          if (stTxt.includes("Seeds") || !!st.querySelector('img[src*="seeds"], img[src*="sunflower_seed"]')) {
+            clickTam(st);
+            await ngu(300);
+            break;
+          }
+        }
+        slot = timSlotHatGiong(doc, tenHatChon);
+      }
+
       if (slot) {
         console.log(`%c[SFL Trồng Ruộng] 🌱 Đã click chọn ${tenHatChon} trong giỏ đồ!`, "color: #4caf50; font-weight: bold;");
         clickTam(slot);
@@ -469,7 +483,17 @@
         return false;
       }
 
-      // 4. LẤY HẠT GIỐNG QUA GAME BRIDGE (KHÔNG CẦN MỞ KHO ĐỒ)
+      // 3. ƯU TIÊN 1: GIEO HẠT HÀNG LOẠT QUA GAME BRIDGE (SIÊU TỐC, KHÔNG CẦN CLICK TỪNG Ô DOM)
+      if (typeof S.bulkPlantBridge === "function") {
+        console.log(`%c[SFL Trồng Ruộng] 🌱 Gieo hạt "${tenHatChon}" hàng loạt qua Game Bridge cho các ô ruộng trống...`, "color: #00bcd4; font-weight: bold;");
+        const resBulk = await S.bulkPlantBridge(tenHatChon, 3000);
+        if (resBulk && resBulk.ok && resBulk.count > 0) {
+          console.log(`%c[SFL Trồng Ruộng] 🎉 ĐÃ GIEO HẠT THÀNH CÔNG cho ${resBulk.count} ô ruộng qua Game Bridge!`, "color: #00e676; font-weight: bold; font-size: 13px;");
+          return true;
+        }
+      }
+
+      // 4. LẤY HẠT GIỐNG QUA GAME BRIDGE HOẶC HOTBAR (KHÔNG CẦN MỞ KHO ĐỒ)
       let hatInfo = await chuanBiHatGiong(tenHatChon, soLuongHat);
       if (!hatInfo) {
         console.log(`%c[SFL Trồng Ruộng] ⚠️ Chưa cầm được hạt giống trên tay -> Hủy gieo hạt (tránh click khống).`, "color: #ff9800; font-weight: bold;");
