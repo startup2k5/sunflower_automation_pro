@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════
 // GIAO DIỆN ĐIỀU KHIỂN AUTO POPUP v6 (popup.js)
-// Đồng bộ 100% các tính năng thực tế với hệ thống điều phối Scheduler
+// Đồng bộ 100% các tính năng nông trại thực tế (Ẩn các luồng chạy ngầm tự động)
 // ═══════════════════════════════════════════════════════════════════════
 
 const FEATURES = [
@@ -10,18 +10,6 @@ const FEATURES = [
     title: "BẬT / TẮT TOÀN BỘ AUTO",
     default: true,
     isMaster: true
-  },
-  {
-    id: 1,
-    icon: "👇",
-    title: "Tự động tap Continue, Claim, Reload",
-    default: true
-  },
-  {
-    id: 2,
-    icon: "🕵️",
-    title: "Tự động giải mã Captcha (Goblin, Rương...)",
-    default: true
   },
   {
     id: 14,

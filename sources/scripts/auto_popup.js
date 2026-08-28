@@ -150,8 +150,8 @@
   async function kiemTraVaXuLyPopupSongSong() {
     if (dangXuLy) return;
 
-    // Kiểm tra cấu hình bật/tắt từ Popup UI (featureId: 1)
-    if (S.cauHinh && S.cauHinh[1] === false) {
+    // Chỉ tạm dừng khi người dùng tắt công tắc tổng (Master Switch)
+    if (S.cauHinh && S.cauHinh.masterBat === false) {
       return;
     }
 
