@@ -2350,23 +2350,38 @@
           const hasHungryCaterpillar = !!(collectibles["Hungry Caterpillar"] && collectibles["Hungry Caterpillar"].length);
 
           for (const s of seasonalCandidates) {
-            // 1. Kiểm tra stock trong cửa hàng
-            const stockQty = toSafeNumber(stock[s.name]);
+            // 1. Kiểm tra điều kiện ô đất trồng (Planting Spot)
+            if (s.category === "Fruit") {
+              const hasFruitPatch = toSafeNumber(inventory["Fruit Patch"]) >= 1 || (state.fruitPatches && Object.keys(state.fruitPatches).length > 0);
+              if (!hasFruitPatch) continue;
+            }
+            if (s.category === "Flower") {
+              const hasFlowerBed = toSafeNumber(inventory["Flower Bed"]) >= 1 || (state.flowers && Object.keys(state.flowers).length > 0);
+              if (!hasFlowerBed) continue;
+            }
+            if (s.category === "Greenhouse") {
+              const hasGreenhouse = toSafeNumber(inventory["Greenhouse"]) >= 1 || !!state.greenhouse;
+              if (!hasGreenhouse) continue;
+            }
+
+            // 2. Kiểm tra stock trong cửa hàng (nếu undefined mặc định 400)
+            const rawStock = stock[s.name];
+            const stockQty = rawStock !== undefined ? toSafeNumber(rawStock) : 400;
             if (stockQty <= 0) continue;
 
-            // 2. Tính đơn giá sau chiết khấu/boosts
+            // 3. Tính đơn giá sau chiết khấu/boosts
             let unitPrice = s.price;
             if (hasKuebiko) unitPrice = 0;
             if (s.category === "Flower" && hasHungryCaterpillar) unitPrice = 0;
 
-            // 3. Tính số lượng tối đa có thể mua (dựa trên coins và stock)
+            // 4. Tính số lượng tối đa có thể mua (dựa trên coins và stock)
             let maxBuy = stockQty;
             if (unitPrice > 0) {
               const affordable = Math.floor(remainingCoins / unitPrice);
               maxBuy = Math.min(maxBuy, affordable);
             }
 
-            // 4. Giới hạn theo sức chứa kho đồ (tối đa 400 hạt giống)
+            // 5. Giới hạn theo sức chứa kho đồ (tối đa 400 hạt giống)
             const currentInv = toSafeNumber(inventory[s.name]);
             const headroom = Math.max(0, 400 - currentInv);
             maxBuy = Math.min(maxBuy, headroom);
@@ -2389,7 +2404,9 @@
                 unitPrice: unitPrice,
                 totalCost: cost,
               });
-            } catch (_e) {}
+            } catch (errBuy) {
+              console.warn("[SFL Bridge] Lỗi mua hạt " + s.name + ":", errBuy);
+            }
           }
 
           if (boughtList.length > 0) {

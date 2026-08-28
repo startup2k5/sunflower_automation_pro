@@ -395,7 +395,7 @@
             );
           } else {
             console.log(
-              "%c[SFL Mua Hạt Giống] ℹ️ Kho hạt giống đã đủ định mức hoặc cửa hàng tạm thời hết hàng / không đủ tiền mua thêm.",
+              "%c[SFL Mua Hạt Giống] ℹ️ Kho hạt giống đã đầy (≥ 400 hạt) hoặc cửa hàng Betty đã hết lượt bán trong đợt này.",
               "color: #4caf50; font-weight: bold;"
             );
           }
