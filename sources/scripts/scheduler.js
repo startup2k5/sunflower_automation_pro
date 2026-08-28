@@ -173,8 +173,14 @@
           continue;
         }
 
-        // Bỏ qua luồng Checkin nếu hôm nay đã check-in xong hoặc đang trong cooldown
-        if (luongObj.id === "checkin" && (S.__daCheckinHomNay || (S.__cooldownCheckin && Date.now() < S.__cooldownCheckin))) {
+        // Bỏ qua luồng Checkin nếu hôm nay đã check-in xong (hoặc localStorage đã ghi nhận)
+        const todayKey = new Date().toISOString().slice(0, 10);
+        if (
+          luongObj.id === "checkin" &&
+          (S.__daCheckinHomNay ||
+            localStorage.getItem("sfl_checkin_done_date") === todayKey ||
+            (S.__cooldownCheckin && Date.now() < S.__cooldownCheckin))
+        ) {
           continue;
         }
 

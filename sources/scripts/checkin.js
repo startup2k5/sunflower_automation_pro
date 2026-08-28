@@ -265,36 +265,124 @@
     }, msConLai);
   }
 
+  function toSafeNumber(val) {
+    if (val === null || val === undefined) return 0;
+    if (typeof val === "number") return isNaN(val) ? 0 : val;
+    if (typeof val === "string") {
+      const p = parseFloat(val);
+      return isNaN(p) ? 0 : p;
+    }
+    if (typeof val === "object" && typeof val.toNumber === "function") {
+      try { return val.toNumber(); } catch (_e) { return 0; }
+    }
+    return 0;
+  }
+
+  // ═══════ [KIỂM TRA CHUẨN XÁC TRẠNG THÁI CHECK-IN HÔM NAY] ═══════
+  function kiemTraRuongDaNhan(state) {
+    const todayUTC = new Date();
+    todayUTC.setUTCHours(0, 0, 0, 0);
+    const todayUTCMs = todayUTC.getTime();
+    const todayKey = todayUTC.toISOString().slice(0, 10);
+
+    // 1. Kiểm tra State từ Game Bridge / S.gameState / S.userData
+    const collectedAt = toSafeNumber(
+      state?.user?.dailyRewards?.collectedAt ??
+      state?.dailyRewards?.chest?.collectedAt ??
+      state?.dailyRewards?.collectedAt ??
+      S.userData?.user?.dailyRewards?.collectedAt ??
+      S.userData?.dailyRewards?.chest?.collectedAt ??
+      0
+    );
+    if (collectedAt > todayUTCMs) {
+      return { daNhan: true, lyDo: `Game State ghi nhận đã nhận lúc ${new Date(collectedAt).toLocaleTimeString("vi-VN")}` };
+    }
+
+    if (state?.user?.dailyRewards?.isCollectedToday === true || S.userData?.user?.dailyRewards?.isCollectedToday === true) {
+      return { daNhan: true, lyDo: "Game Bridge báo isCollectedToday = true" };
+    }
+
+    // 2. Kiểm tra LocalStorage hôm nay
+    if (localStorage.getItem("sfl_chest_collected_date") === todayKey) {
+      return { daNhan: true, lyDo: `LocalStorage ghi nhận đã nhận hôm nay (${todayKey})` };
+    }
+
+    // 3. Kiểm tra DOM thực tế trên đảo:
+    // Nếu rương có id="daily-reward" mang src "treasure_chest_opened" -> CHẮC CHẮN ĐÃ NHẬN RỒI!
+    for (const doc of layTaiLieuGame()) {
+      if (!doc || !doc.body) continue;
+      const openedChest = doc.querySelector(
+        '#daily-reward[src*="opened"], img[src*="treasure_chest_opened"], img[src*="treasure-chest-opened"]'
+      );
+      if (openedChest && xemPhanTuRanh(openedChest)) {
+        localStorage.setItem("sfl_chest_collected_date", todayKey);
+        return { daNhan: true, lyDo: "Ảnh rương trên bản đồ đã ở trạng thái MỞ (treasure_chest_opened)" };
+      }
+    }
+
+    return { daNhan: false };
+  }
+
+  function kiemTraThuyenDaNhan(state) {
+    const todayUTC = new Date();
+    todayUTC.setUTCHours(0, 0, 0, 0);
+    const todayUTCMs = todayUTC.getTime();
+    const todayKey = todayUTC.toISOString().slice(0, 10);
+
+    // 1. Kiểm tra State từ Game Bridge
+    const restockedAt = toSafeNumber(
+      state?.user?.shipments?.restockedAt ??
+      state?.shipments?.restockedAt ??
+      S.userData?.user?.shipments?.restockedAt ??
+      S.userData?.shipments?.restockedAt ??
+      0
+    );
+    if (restockedAt > todayUTCMs) {
+      return { daNhan: true, lyDo: `Game State ghi nhận thuyền đã nhận lúc ${new Date(restockedAt).toLocaleTimeString("vi-VN")}` };
+    }
+
+    if (state?.user?.shipments?.isRestockedToday === true || S.userData?.user?.shipments?.isRestockedToday === true) {
+      return { daNhan: true, lyDo: "Game Bridge báo isRestockedToday = true" };
+    }
+
+    // 2. Kiểm tra LocalStorage hôm nay
+    if (localStorage.getItem("sfl_shipment_restocked_date") === todayKey) {
+      return { daNhan: true, lyDo: `LocalStorage ghi nhận thuyền đã nhận hôm nay (${todayKey})` };
+    }
+
+    return { daNhan: false };
+  }
+
   // ═══════ [PHẦN 1] CHECK-IN RƯƠNG DAILY REWARD ═══════
   async function xuLyCheckinRuongDaily(force = false) {
-    let state = S.gameState;
+    const todayKey = new Date().toISOString().slice(0, 10);
+
+    let state = S.gameState || S.userData;
     if (!state && typeof S.requestBridgeState === "function") {
       state = await S.requestBridgeState(1500);
     }
 
-    const dailyRewards = state?.user?.dailyRewards || {};
-    const daNhanHomNay = !force && !!dailyRewards.isCollectedToday;
-    const streaks = dailyRewards.streaks || 0;
-    const thoiDiemNhan = dailyRewards.collectedAtText || (dailyRewards.collectedAt ? new Date(dailyRewards.collectedAt).toLocaleTimeString("vi-VN") : "chưa rõ");
-
-    if (daNhanHomNay) {
+    const check = kiemTraRuongDaNhan(state);
+    if (!force && check.daNhan) {
       console.log(
-        `%c[SFL Check-in] 🎁 [1/2 RƯƠNG DAILY] ✔️ Đã nhận thưởng hôm nay rồi (Chuỗi: ${streaks} ngày | Nhận lúc: ${thoiDiemNhan}).`,
+        `%c[SFL Check-in] 🎁 [1/2 RƯƠNG DAILY] ✔️ ĐÃ NHẬN HÔM NAY RỒI (${check.lyDo}). Bỏ qua không click lại!`,
         "color: #4caf50; font-weight: bold;"
       );
+      localStorage.setItem("sfl_chest_collected_date", todayKey);
       return true;
     }
 
     console.log(
-      `%c[SFL Check-in] 🎁 [1/2 RƯƠNG DAILY] ${force ? "⚡ Ép buộc nhận quà" : "Tiến hành nhận quà"} (Chuỗi hiện tại: ${streaks} ngày)...`,
+      `%c[SFL Check-in] 🎁 [1/2 RƯƠNG DAILY] ${force ? "⚡ Ép buộc nhận quà" : "Tiến hành nhận quà"}...`,
       "color: #ff9800; font-weight: bold;"
     );
 
     // Cách 1: Ưu tiên Game Bridge
     if (typeof S.claimDailyRewardBridge === "function") {
       const resBridge = await S.claimDailyRewardBridge(2500);
-      if (resBridge && resBridge.ok) {
+      if (resBridge && (resBridge.ok || resBridge.alreadyClaimed)) {
         console.log("%c[SFL Check-in] 🎁 [1/2 RƯƠNG DAILY] 🎉 Nhận quà thành công qua Game Bridge!", "color: #00e676; font-weight: bold; font-size: 13px;");
+        localStorage.setItem("sfl_chest_collected_date", todayKey);
         return true;
       }
     }
@@ -312,10 +400,30 @@
 
     let daBamClaim = false;
     let docHienTai = null;
+    let modalDaMo = false;
 
     for (let lan = 0; lan < 10; lan += 1) {
       await ngu(400);
       for (const doc of layTaiLieuGame()) {
+        const dlg = doc.querySelector('[role="dialog"], .scrollable, div[class*="modal"]');
+        if (dlg && xemPhanTuRanh(dlg)) {
+          modalDaMo = true;
+          const dlgText = (dlg.textContent || "").toLowerCase();
+
+          // Nếu popup hiển thị đã nhận hoặc đếm ngược đến ngày mai:
+          if (
+            dlgText.includes("come back tomorrow") ||
+            dlgText.includes("already claimed") ||
+            dlgText.includes("đã nhận") ||
+            dlgText.includes("next reward in")
+          ) {
+            console.log("%c[SFL Check-in] 🎁 [1/2 RƯƠNG DAILY] ✔️ Bảng quà thông báo đã nhận quà hôm nay rồi!", "color: #4caf50; font-weight: bold;");
+            localStorage.setItem("sfl_chest_collected_date", todayKey);
+            await dongModal(doc);
+            return true;
+          }
+        }
+
         const cacNut = doc.querySelectorAll("button, [role='button']");
         for (const btn of cacNut) {
           if (!xemPhanTuRanh(btn) || btn.disabled) continue;
@@ -352,11 +460,16 @@
         await ngu(600);
       }
       await dongModal(docHienTai);
+      localStorage.setItem("sfl_chest_collected_date", todayKey);
       console.log("%c[SFL Check-in] 🎁 [1/2 RƯƠNG DAILY] 🎉 CHECK-IN RƯƠNG THÀNH CÔNG!", "color: #00e676; font-weight: bold;");
       return true;
     } else {
       for (const doc of layTaiLieuGame()) {
         await dongModal(doc);
+      }
+      if (modalDaMo) {
+        localStorage.setItem("sfl_chest_collected_date", todayKey);
+        return true;
       }
       return false;
     }
@@ -364,20 +477,20 @@
 
   // ═══════ [PHẦN 2] CHECK-IN THUYỀN RESTOCK (SHIPMENT) ═══════
   async function xuLyCheckinThuyenRestock(force = false) {
-    let state = S.gameState;
+    const todayKey = new Date().toISOString().slice(0, 10);
+
+    let state = S.gameState || S.userData;
     if (!state && typeof S.requestBridgeState === "function") {
       state = await S.requestBridgeState(1500);
     }
 
-    const shipments = state?.user?.shipments || {};
-    const daNhanThuyen = !force && !!shipments.isRestockedToday;
-    const thoiDiemRestock = shipments.restockedAtText || "chưa rõ";
-
-    if (daNhanThuyen) {
+    const check = kiemTraThuyenDaNhan(state);
+    if (!force && check.daNhan) {
       console.log(
-        `%c[SFL Check-in] ⛵ [2/2 THUYỀN RESTOCK] ✔️ Hôm nay đã nhận hàng bổ sung rồi (Nhận lúc: ${thoiDiemRestock}).`,
+        `%c[SFL Check-in] ⛵ [2/2 THUYỀN RESTOCK] ✔️ ĐÃ NHẬN HÀNG HÔM NAY RỒI (${check.lyDo}). Bỏ qua không click lại!`,
         "color: #4caf50; font-weight: bold;"
       );
+      localStorage.setItem("sfl_shipment_restocked_date", todayKey);
       return true;
     }
 
@@ -389,8 +502,9 @@
     // Cách 1: Ưu tiên Game Bridge
     if (typeof S.restockShipmentBridge === "function") {
       const resBridge = await S.restockShipmentBridge(2500);
-      if (resBridge && resBridge.ok) {
+      if (resBridge && (resBridge.ok || resBridge.alreadyRestocked)) {
         console.log("%c[SFL Check-in] ⛵ [2/2 THUYỀN RESTOCK] 🎉 Bổ sung hạt giống & công cụ thành công qua Game Bridge!", "color: #00e676; font-weight: bold; font-size: 13px;");
+        localStorage.setItem("sfl_shipment_restocked_date", todayKey);
         return true;
       }
     }
@@ -408,10 +522,27 @@
 
     let daBamRestock = false;
     let docHienTai = null;
+    let modalDaMo = false;
 
     for (let lan = 0; lan < 8; lan += 1) {
       await ngu(400);
       for (const doc of layTaiLieuGame()) {
+        const dlg = doc.querySelector('[role="dialog"], .scrollable, div[class*="modal"]');
+        if (dlg && xemPhanTuRanh(dlg)) {
+          modalDaMo = true;
+          const dlgText = (dlg.textContent || "").toLowerCase();
+          if (
+            dlgText.includes("next free shipment") ||
+            dlgText.includes("shipment in") ||
+            dlgText.includes("chuyến hàng tiếp theo")
+          ) {
+            console.log("%c[SFL Check-in] ⛵ [2/2 THUYỀN RESTOCK] ✔️ Bảng thông báo chuyến hàng miễn phí hôm nay đã nhận rồi!", "color: #4caf50; font-weight: bold;");
+            localStorage.setItem("sfl_shipment_restocked_date", todayKey);
+            await dongModal(doc);
+            return true;
+          }
+        }
+
         const cacNut = doc.querySelectorAll("button, [role='button']");
         for (const btn of cacNut) {
           if (!xemPhanTuRanh(btn) || btn.disabled) continue;
@@ -437,11 +568,16 @@
     if (daBamRestock && docHienTai) {
       await ngu(1000);
       await dongModal(docHienTai);
+      localStorage.setItem("sfl_shipment_restocked_date", todayKey);
       console.log("%c[SFL Check-in] ⛵ [2/2 THUYỀN RESTOCK] 🎉 CHECK-IN THUYỀN RESTOCK THÀNH CÔNG!", "color: #00e676; font-weight: bold;");
       return true;
     } else {
       for (const doc of layTaiLieuGame()) {
         await dongModal(doc);
+      }
+      if (modalDaMo) {
+        localStorage.setItem("sfl_shipment_restocked_date", todayKey);
+        return true;
       }
       return false;
     }
@@ -450,7 +586,10 @@
   // ═══════ TỔNG ĐIỀU PHỐI CHECK-IN (GỒM CẢ RƯƠNG LẪN THUYỀN) ═══════
   async function tickCheckin(force = false) {
     if (dangBan) return false;
-    if (!force && S.__daCheckinHomNay) return true;
+    const todayKey = new Date().toISOString().slice(0, 10);
+    if (!force && (S.__daCheckinHomNay || localStorage.getItem("sfl_checkin_done_date") === todayKey)) {
+      return true;
+    }
     if (!force && S.__cooldownCheckin && Date.now() < S.__cooldownCheckin) return false;
 
     if (typeof S.xinKhoa === "function" && !S.xinKhoa("checkin")) {
@@ -472,9 +611,11 @@
       // 2. Check-in Thuyền Restock hàng hóa
       const okThuyen = await xuLyCheckinThuyenRestock(force);
 
-      // Đánh dấu và lên lịch 7h sáng
-      if (okRuong) {
+      // Đánh dấu hoàn thành hôm nay để scheduler bỏ qua ở tất cả các vòng tiếp theo
+      if (okRuong || okThuyen) {
         S.__daCheckinHomNay = true;
+        localStorage.setItem("sfl_checkin_done_date", todayKey);
+        console.log("%c[SFL Check-in] 🏆 ĐÃ GHI NHẬN CHECK-IN XONG CHO HÔM NAY! Tự động bỏ qua các vòng sau.", "color: #00e676; font-weight: bold; font-size: 13px;");
       }
       lenLich7hSang();
 

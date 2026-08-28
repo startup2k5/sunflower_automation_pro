@@ -137,20 +137,18 @@
       equipped: state.bumpkin?.equipped || {},
       achievements: state.bumpkin?.achievements || {},
       dailyRewards: (() => {
-        const todayUTC = new Date().toISOString().split("T")[0];
+        const todayUTC = new Date();
+        todayUTC.setUTCHours(0, 0, 0, 0);
+        const todayUTCMs = todayUTC.getTime();
+
         // Game lưu thời điểm nhận vào dailyRewards?.chest?.collectedAt
         const rawCollected =
           state.dailyRewards?.chest?.collectedAt ??
           state.dailyRewards?.collectedAt ??
           state.dailyRewards?.collectedDate;
         const collectedAt = toSafeNumber(rawCollected);
-        let isCollectedToday = false;
-        if (collectedAt > 0) {
-          try {
-            const colDate = new Date(collectedAt).toISOString().split("T")[0];
-            isCollectedToday = (colDate === todayUTC);
-          } catch (_e) {}
-        }
+        const isCollectedToday = collectedAt > todayUTCMs;
+
         return {
           streaks: toSafeNumber(state.dailyRewards?.streaks),
           collectedAt: collectedAt,
@@ -160,15 +158,13 @@
         };
       })(),
       shipments: (() => {
-        const todayUTC = new Date().toISOString().split("T")[0];
+        const todayUTC = new Date();
+        todayUTC.setUTCHours(0, 0, 0, 0);
+        const todayUTCMs = todayUTC.getTime();
+
         const restockedAt = toSafeNumber(state.shipments?.restockedAt);
-        let isRestockedToday = false;
-        if (restockedAt > 0) {
-          try {
-            const restockedDate = new Date(restockedAt).toISOString().split("T")[0];
-            isRestockedToday = (restockedDate === todayUTC);
-          } catch (_e) {}
-        }
+        const isRestockedToday = restockedAt > todayUTCMs;
+
         return {
           restockedAt: restockedAt,
           restockedAtText: restockedAt > 0 ? new Date(restockedAt).toLocaleTimeString("vi-VN") + " " + new Date(restockedAt).toLocaleDateString("vi-VN") : "Chưa có",
@@ -984,12 +980,23 @@
       const svc = findGameService();
       let ok = false;
       let error = null;
+      let alreadyClaimed = false;
       if (svc) {
         try {
-          svc.send("dailyReward.claimed");
-          svc.send("CONTINUE");
-          try { svc.send({ type: "SAVE" }); } catch (_e) {}
-          ok = true;
+          const state = svc.state?.context?.state;
+          const today = new Date();
+          today.setUTCHours(0, 0, 0, 0);
+          const chestCollectedAt = toSafeNumber(state?.dailyRewards?.chest?.collectedAt ?? state?.dailyRewards?.collectedAt);
+
+          if (chestCollectedAt > today.getTime()) {
+            alreadyClaimed = true;
+            ok = true;
+          } else {
+            svc.send("dailyReward.claimed");
+            svc.send("CONTINUE");
+            try { svc.send({ type: "SAVE" }); } catch (_e) {}
+            ok = true;
+          }
         } catch (e) {
           error = e?.message || String(e);
         }
@@ -1001,6 +1008,7 @@
         type: "SFL_CLAIM_DAILY_REWARD_RESULT",
         reqId: data.reqId,
         ok,
+        alreadyClaimed,
         error,
       }, "*");
       return;
@@ -1010,11 +1018,22 @@
       const svc = findGameService();
       let ok = false;
       let error = null;
+      let alreadyRestocked = false;
       if (svc) {
         try {
-          svc.send("shipment.restocked");
-          try { svc.send({ type: "SAVE" }); } catch (_e) {}
-          ok = true;
+          const state = svc.state?.context?.state;
+          const today = new Date();
+          today.setUTCHours(0, 0, 0, 0);
+          const restockedAt = toSafeNumber(state?.shipments?.restockedAt);
+
+          if (restockedAt > today.getTime()) {
+            alreadyRestocked = true;
+            ok = true;
+          } else {
+            svc.send("shipment.restocked");
+            try { svc.send({ type: "SAVE" }); } catch (_e) {}
+            ok = true;
+          }
         } catch (e) {
           error = e?.message || String(e);
         }
@@ -1026,6 +1045,7 @@
         type: "SFL_RESTOCK_SHIPMENT_RESULT",
         reqId: data.reqId,
         ok,
+        alreadyRestocked,
         error,
       }, "*");
       return;
