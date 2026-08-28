@@ -104,7 +104,13 @@ const FEATURES = [
   {
     id: 18,
     icon: "🏆",
-    title: "Tự động Nhận Thưởng Mốc Tháng (Season Milestones)",
+    title: "Tự động Nhận Quà Mốc Điểm Season (Track)",
+    default: true
+  },
+  {
+    id: 19,
+    icon: "🗝️",
+    title: "Tự động Mở Khóa Rương Kho Báu (Treasure Chests)",
     default: true
   }
 ];

@@ -40,6 +40,7 @@
         "scripts/poppy_bounties.js",
         "scripts/weekly_chores.js",
         "scripts/season_milestones.js",
+        "scripts/treasure_chest.js",
         "scripts/crops_harvest.js",
         "scripts/fertilise.js",
         "scripts/crops_plant.js",

@@ -27,11 +27,13 @@
     { id: "wood", ten: "12. Chặt Cây Lấy Gỗ", featureId: 5, fn: () => S.tickWoodChop?.() },
     { id: "mining", ten: "13. Đào Khoáng Sản & Dầu", featureId: 6, fn: () => S.tickMining?.() },
     { id: "fruit_tree", ten: "14. Cây Ăn Quả (Thu hoạch & Trồng)", featureId: 11, fn: () => S.tickFruitTree?.() },
+    { id: "cooking", ten: "15. Nấu Ăn & Chế Biến", featureId: 12, fn: () => S.tickCooking?.() },
     // ── GIAO ĐƠN & NHẬN THƯỞNG NHIỆM VỤ ĐỘC LẬP ──
     { id: "deliveries", ten: "16. Giao Đơn Hàng Tàu/NPC", featureId: 13, fn: () => S.tickDeliveries?.() },
     { id: "poppy_bounties", ten: "17. Giao Bounties Poppy (Plaza)", featureId: 16, fn: () => S.tickPoppyBounties?.() },
     { id: "weekly_chores", ten: "18. Nhận Thưởng Nhiệm Vụ Tuần (Chores)", featureId: 17, fn: () => S.tickWeeklyChores?.() },
-    { id: "season_milestones", ten: "19. Nhận Thưởng Mốc Tháng (Milestones)", featureId: 18, fn: () => S.tickSeasonMilestones?.() },
+    { id: "season_milestones", ten: "19. Nhận Quà Mốc Điểm Season (Track)", featureId: 18, fn: () => S.tickSeasonMilestones?.() },
+    { id: "treasure_chest", ten: "20. Mở Rương Kho Báu (Chests)", featureId: 19, fn: () => S.tickTreasureChest?.() },
   ];
 
   function layTaiLieuGame() {

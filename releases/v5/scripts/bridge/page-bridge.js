@@ -3064,6 +3064,68 @@
       return;
     }
 
+    // TỰ ĐỘNG MỞ RƯƠNG KHO BÁU (TREASURE CHESTS) KHI CÓ CHÌA KHÓA
+    if (data.type === "SFL_OPEN_TREASURE_CHEST") {
+      const svc = findGameService();
+      let ok = false;
+      let error = null;
+      const openedChests = [];
+
+      if (svc) {
+        try {
+          const state = svc.state?.context?.state;
+          const inv = state?.inventory || {};
+
+          const CHEST_KEYS = [
+            "Treasure Key",
+            "Rare Key",
+            "Luxury Key",
+            "Sunstone Key",
+            "Obsidian Key"
+          ];
+
+          for (const keyName of CHEST_KEYS) {
+            const count = toSafeNumber(inv[keyName]);
+            if (count > 0) {
+              try {
+                svc.send("REVEAL", {
+                  event: {
+                    key: keyName,
+                    location: "plaza",
+                    type: "treasureChest.opened",
+                    createdAt: new Date(),
+                  },
+                });
+                openedChests.push({ key: keyName, count: 1 });
+              } catch (errOpen) {
+                console.warn("[SFL Bridge Chest Error]", keyName, errOpen);
+              }
+            }
+          }
+
+          if (openedChests.length > 0) {
+            ok = true;
+            try { svc.send({ type: "SAVE" }); } catch (_e) {}
+          }
+        } catch (e) {
+          error = e?.message || String(e);
+        }
+      } else {
+        error = "no_service";
+      }
+
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_OPEN_TREASURE_CHEST_RESULT",
+        reqId: data.reqId,
+        ok,
+        error,
+        openedCount: openedChests.length,
+        openedChests,
+      }, "*");
+      return;
+    }
+
     if (data.type === "SFL_GET_STATE") {
       const statePayload = buildStatePayload();
       window.postMessage({

@@ -838,6 +838,36 @@
   }
   S.claimMilestonesBridge = claimMilestonesBridge;
 
+  // Tự động mở rương kho báu (Treasure Chests) qua Game Bridge khi có chìa khóa
+  function openTreasureChestsBridge(timeoutMs = 4000) {
+    return new Promise((resolve) => {
+      const reqId = "chest_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+      let timer = null;
+
+      function onMsg(ev) {
+        if (ev.source !== window || !ev.data || ev.data._sfl !== true) return;
+        if (ev.data.type === "SFL_OPEN_TREASURE_CHEST_RESULT" && ev.data.reqId === reqId) {
+          clearTimeout(timer);
+          window.removeEventListener("message", onMsg);
+          resolve(ev.data);
+        }
+      }
+
+      timer = setTimeout(() => {
+        window.removeEventListener("message", onMsg);
+        resolve({ ok: false, error: "timeout", openedCount: 0, openedChests: [] });
+      }, timeoutMs);
+
+      window.addEventListener("message", onMsg);
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_OPEN_TREASURE_CHEST",
+        reqId: reqId,
+      }, "*");
+    });
+  }
+  S.openTreasureChestsBridge = openTreasureChestsBridge;
+
   // Lắng nghe message từ page-bridge.js
   let daBaoBridgeReady = false;
   window.addEventListener("message", (event) => {
