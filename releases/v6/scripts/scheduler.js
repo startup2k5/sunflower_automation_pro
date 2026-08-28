@@ -225,16 +225,23 @@
           }
         }
 
-        // Bỏ qua luồng Hoa nếu không có hoa nở và không đủ hạt giống/nguyên liệu trồng
+        // Bỏ qua luồng Hoa nếu không có hoa nở và không đủ hạt giống đúng mùa/nguyên liệu trồng
         if (luongObj.id === "flowers") {
           const state = S.gameState;
           const flowerBeds = (state?.resources?.flowers?.list || []).filter((b) => b && (b.x !== undefined || b.y !== undefined));
           const hasReady = flowerBeds.some((b) => b.isReady);
           const hasEmpty = flowerBeds.some((b) => !b.plantedAt || b.name === "Empty");
           const inv = state?.inventory || S.userData?.inventory || {};
-          const FLOWER_SEEDS = ["Sunpetal Seed", "Bloom Seed", "Lily Seed", "Edelweiss Seed", "Gladiolus Seed", "Lavender Seed", "Clover Seed"];
-          const hasSeed = FLOWER_SEEDS.some((s) => Number(inv[s] || 0) >= 1);
-          if (!hasReady && (!hasEmpty || !hasSeed)) {
+          const season = (state?.season?.season || "spring").toLowerCase();
+          const SEASONAL_FLOWER_SEEDS = {
+            spring: ["Sunpetal Seed", "Bloom Seed", "Lily Seed", "Lavender Seed"],
+            summer: ["Sunpetal Seed", "Bloom Seed", "Lily Seed", "Gladiolus Seed"],
+            autumn: ["Sunpetal Seed", "Bloom Seed", "Lily Seed", "Clover Seed"],
+            winter: ["Sunpetal Seed", "Bloom Seed", "Lily Seed", "Edelweiss Seed"],
+          };
+          const validSeeds = SEASONAL_FLOWER_SEEDS[season] || SEASONAL_FLOWER_SEEDS.spring;
+          const hasSeasonalSeed = validSeeds.some((s) => Number(inv[s] || 0) >= 1);
+          if (!hasReady && (!hasEmpty || !hasSeasonalSeed)) {
             continue;
           }
         }

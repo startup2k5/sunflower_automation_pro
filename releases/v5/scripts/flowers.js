@@ -9,11 +9,13 @@
   let dangBan = false;
   const ngu = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  // Danh mục hạt giống hoa
-  const FLOWER_SEEDS = [
-    "Sunpetal Seed", "Bloom Seed", "Lily Seed",
-    "Edelweiss Seed", "Gladiolus Seed", "Lavender Seed", "Clover Seed"
-  ];
+  // Danh mục hạt giống hoa theo mùa vụ
+  const SEASONAL_FLOWER_SEEDS = {
+    spring: ["Sunpetal Seed", "Bloom Seed", "Lily Seed", "Lavender Seed"],
+    summer: ["Sunpetal Seed", "Bloom Seed", "Lily Seed", "Gladiolus Seed"],
+    autumn: ["Sunpetal Seed", "Bloom Seed", "Lily Seed", "Clover Seed"],
+    winter: ["Sunpetal Seed", "Bloom Seed", "Lily Seed", "Edelweiss Seed"],
+  };
 
   // Danh mục nguyên liệu thụ phấn Set 1
   const SET_1_CROSSBREEDS = [
@@ -51,17 +53,24 @@
     { name: "Red Clover", amount: 1 }, { name: "Yellow Clover", amount: 1 }, { name: "Purple Clover", amount: 1 }, { name: "White Clover", amount: 1 }, { name: "Blue Clover", amount: 1 }
   ];
 
-  // Kiểm tra kho có đủ hạt giống hoa VÀ nguyên liệu thụ phấn không
+  // Kiểm tra kho có đủ hạt giống hoa ĐÚNG MÙA VÀ nguyên liệu thụ phấn không
   function kiemTraDuDieuKienTrongHoa(state) {
     const inv = state?.inventory || S.userData?.inventory || {};
-    const hasSeed = FLOWER_SEEDS.some((s) => Number(inv[s] || 0) >= 1);
-    if (!hasSeed) return false;
+    const season = (state?.season?.season || "spring").toLowerCase();
+    const validSeeds = SEASONAL_FLOWER_SEEDS[season] || SEASONAL_FLOWER_SEEDS.spring;
 
-    // Kiểm tra có ít nhất 1 loại nguyên liệu thụ phấn đủ số lượng
+    // Phải có hạt giống hoa ĐÚNG MÙA
+    const availableSeasonalSeeds = validSeeds.filter((s) => Number(inv[s] || 0) >= 1);
+    if (availableSeasonalSeeds.length === 0) return false;
+
+    // Kiểm tra có nguyên liệu thụ phấn chéo phù hợp với hạt giống hoa đúng mùa
+    const hasSet1Seed = availableSeasonalSeeds.some((s) => ["Sunpetal Seed", "Bloom Seed", "Lily Seed"].includes(s));
+    const hasSet2Seed = availableSeasonalSeeds.some((s) => ["Edelweiss Seed", "Gladiolus Seed", "Lavender Seed", "Clover Seed"].includes(s));
+
     const hasSet1Material = SET_1_CROSSBREEDS.some((cb) => Number(inv[cb.name] || 0) >= cb.amount);
     const hasSet2Material = SET_2_CROSSBREEDS.some((cb) => Number(inv[cb.name] || 0) >= cb.amount);
 
-    return hasSet1Material || hasSet2Material;
+    return (hasSet1Seed && hasSet1Material) || (hasSet2Seed && hasSet2Material);
   }
 
   function layTaiLieuGame() {
