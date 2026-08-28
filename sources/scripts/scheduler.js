@@ -174,6 +174,19 @@
           continue;
         }
 
+        // Bỏ qua luồng Rắc Phân nếu số lượng phân bón trong kho <= 0 (ngăn ngừa hành động thừa)
+        if (luongObj.id === "fertilise") {
+          const inv = S.gameState?.inventory || S.userData?.inventory || {};
+          const sproutMix = Number(inv["Sprout Mix"] || 0);
+          const rapidRoot = Number(inv["Rapid Root"] || 0);
+          const sproutSurprise = Number(inv["Sproutroot Surprise"] || 0);
+          const fertiliser = Number(inv["Fertiliser"] || 0);
+          const totalPhan = sproutMix + rapidRoot + sproutSurprise + fertiliser;
+          if (totalPhan <= 0) {
+            continue;
+          }
+        }
+
         // 1. Kiểm tra và giải Captcha trước mỗi bước
         if (typeof S.isCaptchaOpen === "function" && S.isCaptchaOpen()) {
           console.log("%c[SFL Điều Phối] 🚨 Gặp Captcha! Tạm dừng để giải ngay...", "color: #ff3838; font-weight: bold;");

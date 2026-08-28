@@ -370,6 +370,28 @@
   async function tickFertilise() {
     if (dangBan) return false;
 
+    // 0. KIỂM TRA SỐ LƯỢNG PHÂN BÓN TRƯỚC TIÊN (CHỈ CHẠY KHI SỐ LƯỢNG > 0)
+    let state = S.gameState;
+    let inv = state?.inventory || S.userData?.inventory;
+    if (!inv && typeof S.requestBridgeState === "function") {
+      try {
+        state = await S.requestBridgeState(800);
+        inv = state?.inventory;
+      } catch (_e) {}
+    }
+    inv = inv || {};
+
+    const sproutMixCount = Number(inv["Sprout Mix"] || 0);
+    const rapidRootCount = Number(inv["Rapid Root"] || 0);
+    const sproutSurpriseCount = Number(inv["Sproutroot Surprise"] || 0);
+    const fertiliserCount = Number(inv["Fertiliser"] || 0);
+    const totalPhan = sproutMixCount + rapidRootCount + sproutSurpriseCount + fertiliserCount;
+
+    if (totalPhan <= 0) {
+      // Số lượng phân <= 0 -> Thoát ngay lập tức, không xin khóa, không quét DOM, tránh hành động thừa
+      return false;
+    }
+
     // 1. Khóa độc quyền toàn cục
     if (typeof S.xinKhoa === "function" && !S.xinKhoa("fertilise")) {
       return false;
@@ -378,25 +400,6 @@
 
     try {
       if (typeof S.isFlowBlocked === "function" && S.isFlowBlocked("fertilise")) {
-        return false;
-      }
-
-      // 2. KIỂM TRA SỐ LƯỢNG PHÂN BÓN TỪ LOAD_DATA / GAME STATE TRƯỚC TIÊN
-      let state = S.gameState;
-      if (typeof S.requestBridgeState === "function") {
-        try {
-          state = await S.requestBridgeState(1200);
-        } catch (_e) {}
-      }
-
-      const inv = state?.inventory || S.userData?.inventory || {};
-      const sproutMixCount = Number(inv["Sprout Mix"] || 0);
-      const rapidRootCount = Number(inv["Rapid Root"] || 0);
-      const sproutSurpriseCount = Number(inv["Sproutroot Surprise"] || 0);
-      const fertiliserCount = Number(inv["Fertiliser"] || 0);
-      const totalPhan = sproutMixCount + rapidRootCount + sproutSurpriseCount + fertiliserCount;
-
-      if (totalPhan <= 0) {
         return false;
       }
 
