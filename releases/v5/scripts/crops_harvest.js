@@ -129,7 +129,7 @@
     if (el.parentElement) kichHoatReactProps(el.parentElement);
 
     // Gửi sự kiện cho placement cha nếu có
-    const placement = el.closest?.('[data-map-placement="true"]');
+    const placement = el.closest?.('[data-map-placement]');
     if (placement && placement !== el) {
       try { placement.dispatchEvent(new MouseEvent("click", upOpts)); } catch (_e5) {}
       kichHoatReactProps(placement);
@@ -175,17 +175,17 @@
                             !src.includes("seedling") && !src.includes("halfway") && !src.includes("almost");
         if (!laPlantChin) continue;
 
-        const placement = img.closest('[data-map-placement="true"]') || img.closest('div.cursor-pointer, [class*="cursor-pointer"]') || img.parentElement;
+        const placement = img.closest('[data-map-placement]') || img.closest('div.cursor-pointer, [class*="cursor-pointer"]') || img.parentElement;
         if (!placement || daThem.has(placement) || !xemPhanTuRanh(placement)) continue;
 
-        // Tránh nhầm lẫn với thùng ủ phân (Compost Bin) hoặc cây ăn quả (Fruit Patch)
         const textToanBo = (placement.textContent || "").toLowerCase();
         const cacSrcTrongO = Array.from(placement.querySelectorAll("img")).map((i) => (i.src || "").toLowerCase());
         const laCompost = cacSrcTrongO.some((s) => s.includes("compost") || s.includes("turbo") || s.includes("premium"));
+        const laVatPhamCam = cacSrcTrongO.some((s) => s.includes("raft") || s.includes("boat") || s.includes("prestige") || s.includes("npc") || s.includes("bumpkin") || s.includes("decorations") || s.includes("land/"));
         const coThanhTienTrinh = !!placement.querySelector("div[style*='background-color']");
         const coDemGio = /\d+\s*(?:mins?|secs?|hours?|hrs?|m\b|s\b|h\b)|\d+:\d+/i.test(textToanBo);
 
-        if (laCompost || coThanhTienTrinh || coDemGio) continue;
+        if (laCompost || laVatPhamCam || coThanhTienTrinh || coDemGio) continue;
 
         daThem.add(placement);
         danhSach.push({
@@ -202,9 +202,18 @@
   // ═══════ LUỒNG THU HOẠCH CHÍNH ═══════
   async function tickCropHarvest() {
     if (dangBan) return false;
+
+    // Khóa độc quyền luồng thu hoạch
+    if (typeof S.xinKhoa === "function" && !S.xinKhoa("crops_harvest")) {
+      return false;
+    }
     dangBan = true;
 
     try {
+      if (typeof S.isFlowBlocked === "function" && S.isFlowBlocked("crops_harvest")) {
+        return false;
+      }
+
       // 1. Kiểm tra qua Game Bridge trước xem có ô nào chín không
       let state = null;
       if (typeof S.requestBridgeState === "function") {
@@ -236,6 +245,8 @@
           await ngu(800);
           if (!S.isCaptchaOpen || !S.isCaptchaOpen()) {
             S.__captchaInterrupted = false;
+            S.__captchaActive = false;
+            if (typeof S.xinKhoa === "function") S.xinKhoa("crops_harvest");
             console.log("%c[SFL Thu Hoạch] 🔄 Đã giải xong Captcha! TIẾP TỤC thu hoạch các ô còn lại...", "color: #4caf50; font-weight: bold; font-size: 13px;");
             continue;
           }
@@ -261,6 +272,9 @@
       return false;
     } finally {
       dangBan = false;
+      if (typeof S.nhaKhoa === "function") {
+        S.nhaKhoa("crops_harvest");
+      }
     }
   }
 

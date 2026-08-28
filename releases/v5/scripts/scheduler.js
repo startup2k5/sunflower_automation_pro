@@ -77,17 +77,33 @@
   }
   S.isGoblinSwarm = isGoblinSwarm;
 
+  // Tự động tắt vĩnh viễn banner "VIP expired" của game trong localStorage
+  try {
+    localStorage.setItem("vipExpiryAcknowledged", new Date(Date.now() + 86400000 * 365).toISOString());
+  } catch (_e) {}
+
   function laNutCloseChuan(el) {
     if (!el || !xemPhanTuRanh(el)) return false;
     const src = (el.src || el.getAttribute?.("src") || "").toLowerCase();
     const alt = (el.alt || el.getAttribute?.("alt") || "").toLowerCase();
+
+    // TUYỆT ĐỐI BỎ QUA MỌI THỨ LIÊN QUAN ĐẾN VIP (TRÁNH BẤM MUA VIP)
+    const pText = (el.parentElement?.textContent || el.closest?.("div, button, [role='button']")?.textContent || "").toLowerCase();
+    if (pText.includes("vip") || src.includes("vip")) {
+      return false;
+    }
+    const vipContainer = el.closest?.('[class*="vip"], [id*="vip"], [data-name*="vip"]');
+    if (vipContainer) return false;
+
     // TUYỆT ĐỐI KHÔNG ĐƯỢC NHẬN NHẦM THÙNG COMPOST CLOSED HOẶC ĐỒ TRÊN ĐẢO!
     if (src.includes("compost") || src.includes("closed") || src.includes("building") || src.includes("island")) {
       return false;
     }
     const laAnhClose = src.includes("/ui/close") || src.includes("/icons/close") || src.includes("close.png") || src.includes("cancel.png") || alt === "close" || alt === "cancel";
     const laAriaClose = el.getAttribute?.("aria-label") === "close";
-    const trongDialog = !!el.closest?.('[role="dialog"], [role="modal"], div[class*="modal"], div[style*="dark_border"], .scrollable');
+
+    // Phải nằm trong modal/dialog thực sự (loại trừ các panel HUD trên màn hình như widget VIP)
+    const trongDialog = !!el.closest?.('[role="dialog"], [role="modal"], div[class*="modal"], .fixed.inset-0');
     return (laAnhClose || laAriaClose) && trongDialog;
   }
 
@@ -101,8 +117,11 @@
         const cacAnhClose = doc.querySelectorAll('img[src*="/ui/close"], img[src*="close.png"], img[src*="cancel.png"], button[aria-label="close"]');
         for (const img of cacAnhClose) {
           if (!laNutCloseChuan(img)) continue;
-          const btn = img.closest("button, [role='button'], div[class*='cursor-pointer']") || img;
-          try { btn.click(); } catch (_e) {}
+          // Chỉ click button hoặc chính thẻ img close, KHÔNG click div.cursor-pointer cha tránh kích hoạt nội dung bên trong
+          const btn = img.closest("button, [role='button']") || img;
+          try {
+            btn.click();
+          } catch (_e) {}
           daDong = true;
           await ngu(200);
           break;
@@ -129,7 +148,7 @@
 
     // Đợi game và dữ liệu State sẵn sàng (tối đa 10s)
     for (let wait = 0; wait < 20; wait++) {
-      if (S.gameState || document.querySelector('[data-map-placement="true"], #root, canvas')) break;
+      if (S.gameState || document.querySelector('[data-map-placement], #root, canvas')) break;
       await ngu(500);
     }
 
@@ -145,6 +164,11 @@
       soThuTuVongLap++;
       console.log(`%c[SFL Điều Phối] 🔄 BẮT ĐẦU CHU KỲ VÒNG ${soThuTuVongLap}...`, "color: #2196f3; font-weight: bold; font-size: 13px;");
 
+      // Cập nhật Game State tươi mới nhất qua Bridge cho vòng lặp hiện tại
+      if (typeof S.requestBridgeState === "function") {
+        try { await S.requestBridgeState(1500); } catch (_e) {}
+      }
+
       // Duyệt tuần tự lần lượt qua từng bước một (1 -> 15)
       for (let i = 0; i < CAC_LUONG.length; i++) {
         const luongObj = CAC_LUONG[i];
@@ -154,8 +178,14 @@
           continue;
         }
 
-        // Bỏ qua luồng Checkin nếu hôm nay đã check-in xong hoặc đang trong cooldown
-        if (luongObj.id === "checkin" && (S.__daCheckinHomNay || (S.__cooldownCheckin && Date.now() < S.__cooldownCheckin))) {
+        // Bỏ qua luồng Checkin nếu hôm nay đã check-in xong (hoặc localStorage đã ghi nhận)
+        const todayKey = new Date().toISOString().slice(0, 10);
+        if (
+          luongObj.id === "checkin" &&
+          (S.__daCheckinHomNay ||
+            localStorage.getItem("sfl_checkin_done_date") === todayKey ||
+            (S.__cooldownCheckin && Date.now() < S.__cooldownCheckin))
+        ) {
           continue;
         }
 
@@ -164,9 +194,16 @@
           continue;
         }
 
-        // Bỏ qua luồng Mua Hạt Giống từ vòng 2 trở đi (chỉ chạy 1 lần duy nhất ở vòng 1 cho đến khi tải lại trang)
-        if (luongObj.id === "seeds_buy" && (soThuTuVongLap > 1 || S.__daMuaHatGiongVongDau)) {
-          continue;
+        // Bỏ qua luồng Mua Hạt Giống nếu số tiền < 1 xu hoặc đã mua ở vòng trước
+        if (luongObj.id === "seeds_buy") {
+          const coins = Number(S.gameState?.coins ?? S.userData?.coins ?? 0);
+          if (coins < 1) {
+            console.log(`%c[SFL Scheduler] 💰 Số dư hiện tại (${coins.toFixed(2)} xu < 1 xu) -> Bỏ qua luồng Mua Hạt Giống.`, "color: #ff9800;");
+            continue;
+          }
+          if (soThuTuVongLap > 1 || S.__daMuaHatGiongVongDau) {
+            continue;
+          }
         }
 
         // Bỏ qua luồng Compost nếu đang trong thời gian nghỉ cooldown (ngăn chặn spam 100%)
@@ -174,13 +211,26 @@
           continue;
         }
 
-        // 1. Kiểm tra và giải Captcha trước mỗi bước
-        if (typeof S.isCaptchaOpen === "function" && S.isCaptchaOpen()) {
-          console.log("%c[SFL Điều Phối] 🚨 Gặp Captcha! Tạm dừng để giải ngay...", "color: #ff3838; font-weight: bold;");
+        // Bỏ qua luồng Rắc Phân nếu số lượng phân bón trong kho <= 0 (ngăn ngừa hành động thừa)
+        if (luongObj.id === "fertilise") {
+          const inv = S.gameState?.inventory || S.userData?.inventory || {};
+          const sproutMix = Number(inv["Sprout Mix"] || 0);
+          const rapidRoot = Number(inv["Rapid Root"] || 0);
+          const sproutSurprise = Number(inv["Sproutroot Surprise"] || 0);
+          const fertiliser = Number(inv["Fertiliser"] || 0);
+          const totalPhan = sproutMix + rapidRoot + sproutSurprise + fertiliser;
+          if (totalPhan <= 0) {
+            continue;
+          }
+        }
+
+        // 1. Kiểm tra và giải Captcha trước mỗi bước (ĐÓNG BĂNG TUYỆT ĐỐI, KHÔNG ĐƯỢC CHUYỂN LUỒNG)
+        while (typeof S.isCaptchaOpen === "function" && S.isCaptchaOpen()) {
+          console.log("%c[SFL Điều Phối] 🚨 Đang có Captcha trên màn hình! Đóng băng hệ thống để tập trung giải...", "color: #ff3838; font-weight: bold; font-size: 13px;");
           if (typeof S.kiemTraVaGiaiCaptcha === "function") {
             await S.kiemTraVaGiaiCaptcha();
           }
-          await ngu(500);
+          await ngu(800);
         }
 
         // 2. Kiểm tra Goblin Swarm
@@ -191,6 +241,15 @@
 
         // 3. Đóng sạch sẽ các popup còn sót lại của bước trước
         await donDepPopupGiuaCacBuoc();
+
+        // Đảm bảo cờ Captcha và khóa Captcha được giải phóng hoàn toàn nếu Captcha đã đóng
+        if (typeof S.isCaptchaOpen === "function" && !S.isCaptchaOpen()) {
+          S.__captchaActive = false;
+          S.__captchaInterrupted = false;
+          if (S.luongDangGiu === "captcha" && typeof S.nhaKhoa === "function") {
+            S.nhaKhoa("captcha");
+          }
+        }
 
         // 4. Bắt đầu thực thi DUY NHẤT luồng hiện tại và ĐỢI KẾT THÚC HOÀN TOÀN
         console.log(`%c[SFL Điều Phối] ▶️ [BƯỚC ${i + 1}/${CAC_LUONG.length}] BẮT ĐẦU: ${luongObj.ten.toUpperCase()}`, "color: #00bcd4; font-weight: bold; font-size: 12px;");
@@ -204,23 +263,26 @@
           console.error(`[SFL Điều Phối] Lỗi trong bước ${luongObj.ten}:`, err);
         }
 
-        // 5. Nếu bị ngắt bởi Captcha trong lúc thực thi
+        // 5. Nếu bị ngắt bởi Captcha trong lúc thực thi hoặc sau bước:
+        // ĐÓNG BĂNG VÀ GIẢI ĐẾN KHI XONG, RỒI TIẾP TỤC QUAY LẠI CHẠY TIẾP CHÍNH LUỒNG ĐÓ TỪ CHỖ DỪNG!
         if (S.__captchaInterrupted || (typeof S.isCaptchaOpen === "function" && S.isCaptchaOpen())) {
-          console.log(`%c[SFL Điều Phối] 🚨 Bị ngắt bởi Captcha! Đợi giải xong trước khi đi tiếp...`, "color: #ff9800; font-weight: bold;");
-          if (typeof S.kiemTraVaGiaiCaptcha === "function") {
-            await S.kiemTraVaGiaiCaptcha();
+          while (S.__captchaInterrupted || (typeof S.isCaptchaOpen === "function" && S.isCaptchaOpen())) {
+            console.log(`%c[SFL Điều Phối] 🚨 Bị ngắt bởi Captcha ở [BƯỚC ${i + 1}: ${luongObj.ten}]! Đóng băng mọi luồng để tập trung giải...`, "color: #ff9800; font-weight: bold;");
+            if (typeof S.kiemTraVaGiaiCaptcha === "function") {
+              await S.kiemTraVaGiaiCaptcha();
+            }
+            await ngu(800);
+            if (typeof S.isCaptchaOpen === "function" && !S.isCaptchaOpen()) {
+              S.__captchaInterrupted = false;
+              break;
+            }
           }
-          await ngu(500);
-          await donDepPopupGiuaCacBuoc();
 
-          // KHI GIẢI XONG CAPTCHA -> TIẾP TỤC QUAY LẠI CHÍNH LUỒNG ĐÓ!
-          if (!S.isCaptchaOpen || !S.isCaptchaOpen()) {
-            console.log(`%c[SFL Điều Phối] 🔄 Đã giải xong Captcha! TIẾP TỤC QUAY LẠI HOÀN THÀNH LUỒNG: ${luongObj.ten.toUpperCase()}`, "color: #00e676; font-weight: bold; font-size: 13px;");
-            S.__captchaInterrupted = false;
-            i--; // Giảm i để vòng lặp for chạy lại chính bước này
-            await ngu(1000);
-            continue;
-          }
+          console.log(`%c[SFL Điều Phối] 🔄 ĐÃ GIẢI XONG CAPTCHA! TIẾP TỤC QUAY LẠI HOÀN THÀNH LUỒNG: ${luongObj.ten.toUpperCase()} TỪ CHỖ DỪNG...`, "color: #00e676; font-weight: bold; font-size: 13px;");
+          await donDepPopupGiuaCacBuoc();
+          i--; // Giảm i để vòng lặp for chạy lại chính bước này
+          await ngu(800);
+          continue;
         }
 
         console.log(`[SFL Điều Phối] ✔️ [BƯỚC ${i + 1}/${CAC_LUONG.length}] XONG: ${luongObj.ten}`);
@@ -240,7 +302,7 @@
 
   // Khởi động sau khi vào game 4 giây (chỉ ở frame game chính)
   setTimeout(() => {
-    if (window !== window.top && !document.querySelector('#root, [data-map-placement="true"], canvas')) return;
+    if (window !== window.top && !document.querySelector('#root, [data-map-placement], canvas')) return;
     vongLapChinh();
   }, 4000);
 

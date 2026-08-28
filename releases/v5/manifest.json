@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Sunflower Land Pro Automation v5",
-  "version": "5.0.0",
-  "description": "Hệ thống tự động hóa toàn diện 100% Game Bridge cho Sunflower Land.",
+  "name": "Sunflower Land Pro Automation v6",
+  "version": "6.0.0",
+  "description": "Hệ thống tự động hóa toàn diện 100% Game Bridge cho Sunflower Land (v6).",
   "permissions": [
     "storage"
   ],
@@ -20,8 +20,10 @@
       "js": [
         "content.js",
         "scripts/bridge/game-bridge.js",
+        "scripts/game_data.js",
         "scripts/lock.js",
         "scripts/captcha.js",
+        "scripts/auto_popup.js",
         "scripts/load_data.js",
         "scripts/checkin.js",
         "scripts/tools_buy.js",
@@ -46,7 +48,8 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "scripts/bridge/page-bridge.js"
+        "scripts/bridge/page-bridge.js",
+        "data/data.json"
       ],
       "matches": [
         "https://sunflower-land.com/*",
@@ -61,7 +64,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Sunflower Land Pro v5",
+    "default_title": "Sunflower Land Pro v6",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",

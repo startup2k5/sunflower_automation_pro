@@ -1,6 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════
 // LUỒNG THU HOẠCH MẬT ONG (honey.js)
-// Dựa vào Game Bridge để kiểm tra tổ ong đầy mật (produced >= 24)
+// Kiểm tra chính xác 100% hũ mật ong đã đầy trước khi thu hoạch
+// Tránh click khống hoặc mở modal báo mật chưa đầy
 // ═══════════════════════════════════════════════════════════════════
 (function (S) {
   "use strict";
@@ -36,7 +37,10 @@
   function xemPhanTuRanh(el) {
     if (!el) return false;
     const rect = el.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return false;
+    const hasSize = rect.width > 0 && rect.height > 0;
+    const hasChildSize = el.firstElementChild ? el.firstElementChild.getBoundingClientRect().width > 0 : false;
+    const hasImgSize = el.querySelector("img") ? el.querySelector("img").getBoundingClientRect().width > 0 : false;
+    if (!hasSize && !hasChildSize && !hasImgSize && el.offsetWidth <= 0 && el.offsetHeight <= 0) return false;
     const view = el.ownerDocument?.defaultView || window;
     let style;
     try { style = view.getComputedStyle(el); } catch (_e) { return false; }
@@ -46,8 +50,8 @@
   function kichHoatReactProps(el) {
     if (!el) return;
     for (const k in el) {
-      if (k.startsWith("__reactProps$") || k.startsWith("__reactEventHandlers$")) {
-        const p = el[k];
+      if (k.startsWith("__reactProps$") || k.startsWith("__reactEventHandlers$") || k.startsWith("__reactFiber$")) {
+        const p = el[k]?.memoizedProps || el[k];
         if (p) {
           if (typeof p.onPointerDown === "function") {
             try { p.onPointerDown({ stopPropagation: () => {}, preventDefault: () => {}, target: el, currentTarget: el, button: 0 }); } catch (_e) {}
@@ -65,9 +69,8 @@
     const view = el.ownerDocument?.defaultView || window;
     try { if (view && typeof view.focus === "function") view.focus(); } catch (_e) {}
     const rect = el.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return false;
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
+    const cx = rect.left + (rect.width > 0 ? rect.width / 2 : 16);
+    const cy = rect.top + (rect.height > 0 ? rect.height / 2 : 16);
 
     const baseOpts = {
       bubbles: true,
@@ -76,8 +79,8 @@
       view: view,
       clientX: cx,
       clientY: cy,
-      screenX: cx,
-      screenY: cy,
+      pageX: cx + (view.scrollX || 0),
+      pageY: cy + (view.scrollY || 0),
       which: 1,
       button: 0,
     };
@@ -87,49 +90,75 @@
     try { el.focus?.({ preventScroll: true }); } catch (_e) {}
 
     try {
-      if (typeof PointerEvent !== "undefined") {
-        el.dispatchEvent(new PointerEvent("pointerover", { ...baseOpts, pointerId: 1, pointerType: "mouse" }));
-        el.dispatchEvent(new PointerEvent("pointerenter", { ...baseOpts, pointerId: 1, pointerType: "mouse" }));
-        el.dispatchEvent(new PointerEvent("pointerdown", { ...downOpts, pointerId: 1, pointerType: "mouse", isPrimary: true, pressure: 0.5 }));
-      }
+      try { el.dispatchEvent(new PointerEvent("pointerdown", downOpts)); } catch (_p1) {}
+      el.dispatchEvent(new MouseEvent("mousedown", downOpts));
+      try { el.dispatchEvent(new PointerEvent("pointerup", upOpts)); } catch (_p2) {}
+      el.dispatchEvent(new MouseEvent("mouseup", upOpts));
+      el.dispatchEvent(new MouseEvent("click", baseOpts));
+      try { el.click?.(); } catch (_e2) {}
+      kichHoatReactProps(el);
+      if (el.parentElement) kichHoatReactProps(el.parentElement);
+      if (el.firstElementChild) kichHoatReactProps(el.firstElementChild);
     } catch (_e2) {}
-    el.dispatchEvent(new MouseEvent("mouseover", baseOpts));
-    el.dispatchEvent(new MouseEvent("mouseenter", baseOpts));
-    el.dispatchEvent(new MouseEvent("mousedown", downOpts));
 
-    try {
-      if (typeof PointerEvent !== "undefined") {
-        el.dispatchEvent(new PointerEvent("pointerup", { ...upOpts, pointerId: 1, pointerType: "mouse", isPrimary: true, pressure: 0 }));
-      }
-    } catch (_e3) {}
-    el.dispatchEvent(new MouseEvent("mouseup", upOpts));
-    el.dispatchEvent(new MouseEvent("click", upOpts));
-
-    try { el.click?.(); } catch (_e4) {}
-    kichHoatReactProps(el);
-    if (el.parentElement) kichHoatReactProps(el.parentElement);
+    const placement = el.closest?.('[data-map-placement]') || el;
+    if (placement && placement !== el) {
+      try {
+        try { placement.dispatchEvent(new PointerEvent("pointerdown", downOpts)); } catch (_p3) {}
+        placement.dispatchEvent(new MouseEvent("click", baseOpts));
+        kichHoatReactProps(placement);
+      } catch (_e3) {}
+    }
 
     setTimeout(() => {
       try {
         if (typeof el.blur === "function") el.blur();
         el.dispatchEvent(new MouseEvent("mouseout", upOpts));
         el.dispatchEvent(new MouseEvent("mouseleave", upOpts));
-      } catch (_e5) {}
-    }, 40);
+        if (placement && placement !== el) {
+          if (typeof placement.blur === "function") placement.blur();
+          placement.dispatchEvent(new MouseEvent("mouseout", upOpts));
+          placement.dispatchEvent(new MouseEvent("mouseleave", upOpts));
+        }
+      } catch (_e6) {}
+    }, 60);
 
     return true;
   }
 
-  function timToOngDOM() {
+  // Quét DOM tìm các tổ ong THỰC SỰ ĐÃ ĐẦY MẬT (Hiển thị biểu tượng Giọt Mật Honey Drop)
+  function timToOngDayMatDOM() {
     const taiLieu = layTaiLieuGame();
     const danhSach = [];
     for (const doc of taiLieu) {
       if (!doc || !doc.body) continue;
-      const cacAnhBee = doc.querySelectorAll("img[src*='beehive'], img[src*='bee_box'], img[src*='honey']");
-      for (const img of cacAnhBee) {
+
+      // 1. Quét tìm thẻ ảnh giọt mật Honey Drop (chỉ hiển thị khi hũ mật đã đầy 100%)
+      const cacAnhHoneyDrop = Array.from(doc.querySelectorAll("img[src*='honey_drop'], img[alt*='Honey Drop']"));
+      for (const img of cacAnhHoneyDrop) {
         if (!xemPhanTuRanh(img)) continue;
-        const target = img.closest('[data-map-placement="true"]') || img.closest('div.cursor-pointer') || img;
-        if (!danhSach.includes(target)) danhSach.push(target);
+        const className = img.className || "";
+        // Nếu có class scale-0 hoặc ẩn -> hũ mật CHƯA đầy
+        if (className.includes("scale-0") && !className.includes("scale-100")) continue;
+
+        const target = img.closest('[data-map-placement]') || img.closest('div.cursor-pointer') || img.parentElement;
+        if (target && !danhSach.includes(target)) danhSach.push(target);
+      }
+
+      // 2. Quét từ container beehive có chứa giọt mật sẵn sàng
+      const cacContainerBeehive = Array.from(doc.querySelectorAll('[data-map-placement], div.cursor-pointer'));
+      for (const box of cacContainerBeehive) {
+        if (danhSach.includes(box) || !xemPhanTuRanh(box)) continue;
+        const imgBeehive = box.querySelector("img[src*='beehive'], img[alt*='Beehive']");
+        if (!imgBeehive) continue;
+
+        const imgDrop = box.querySelector("img[src*='honey_drop'], img[alt*='Honey Drop']");
+        if (imgDrop && xemPhanTuRanh(imgDrop)) {
+          const dropClass = imgDrop.className || "";
+          if (dropClass.includes("honey-drop-ready") || (dropClass.includes("scale-100") && !dropClass.includes("scale-0"))) {
+            danhSach.push(box);
+          }
+        }
       }
     }
     return danhSach;
@@ -137,29 +166,69 @@
 
   async function tickHoney() {
     if (dangBan) return false;
+
+    // Khóa độc quyền luồng mật ong
+    if (typeof S.xinKhoa === "function" && !S.xinKhoa("honey")) {
+      return false;
+    }
     dangBan = true;
 
     try {
+      if (typeof S.isFlowBlocked === "function" && S.isFlowBlocked("honey")) {
+        return false;
+      }
+
+      // 1. Lấy dữ liệu Game State mới nhất từ Bridge
       let state = null;
       if (typeof S.requestBridgeState === "function") {
         state = await S.requestBridgeState(1500);
       }
+      if (!state) state = S.gameState;
 
       const hivesBridge = state?.resources?.beehives?.list || [];
-      const hivesReady = hivesBridge.filter((h) => h.isReady);
+      const totalHives = state?.resources?.beehives?.total || hivesBridge.length;
 
-      const toOngs = timToOngDOM();
-      if (toOngs.length === 0 && hivesReady.length === 0) {
+      // Danh sách tổ ong ĐÃ ĐẦY 100% mật theo Game Bridge
+      const hivesReadyBridge = hivesBridge.filter((h) => h.isReady);
+
+      // In nhật ký tiến độ từng tổ ong
+      if (hivesBridge.length > 0) {
+        const hiveProgress = hivesBridge.map((h, i) => `Tổ #${i + 1}: ${h.percentage}% (${h.isReady ? "🎁 ĐẦY HŨ" : "⏳ Đang tạo"})`).join(" | ");
+        console.log(`%c[SFL Mật Ong] 🐝 Trạng thái ${totalHives} tổ ong: ${hiveProgress}`, "color: #ffb300; font-weight: bold;");
+      }
+
+      // ── 1. ƯU TIÊN THU HOẠCH QUA GAME BRIDGE NẾU CÓ TỔ ĐẦY MẬT ──
+      if (hivesReadyBridge.length > 0 && typeof S.harvestHoneyBridge === "function") {
+        console.log(`%c[SFL Mật Ong] 🍯 Phát hiện ${hivesReadyBridge.length} tổ ong ĐÃ ĐẦY 100% mật! Thu hoạch qua Game Bridge...`, "color: #00e676; font-weight: bold;");
+        const res = await S.harvestHoneyBridge(4000);
+        if (res && res.ok && res.count > 0) {
+          console.log(`%c[SFL Mật Ong] 🎉 ĐÃ THU HOẠCH THÀNH CÔNG ${res.count} hũ mật ong qua Game Bridge!`, "color: #00e676; font-weight: bold; font-size: 14px;");
+          return true;
+        }
+      }
+
+      // ── 2. FALLBACK DOM: CHỈ CLICK KHI XÁC ĐỊNH CHÍNH XÁC HŨ MẬT ĐÃ ĐẦY (Có giọt mật Honey Drop) ──
+      const toOngDayMat = timToOngDayMatDOM();
+
+      // NẾU KHÔNG CÓ TỔ NÀO ĐẦY MẬT -> BỎ QUA NGAY, TUYỆT ĐỐI KHÔNG CLICK VÀO TỔ CHƯA ĐẦY!
+      if (toOngDayMat.length === 0 && hivesReadyBridge.length === 0) {
+        if (totalHives > 0) {
+          console.log(`%c[SFL Mật Ong] ℹ️ Chưa có tổ ong nào đầy 100% mật -> Bỏ qua thu hoạch (Tránh mở popup thông báo).`, "color: #9e9e9e;");
+        }
         return false;
       }
 
-      console.log(`%c[SFL Mật Ong] 🍯 Có ${hivesReady.length || toOngs.length} tổ ong sẵn sàng. Thu hoạch mật...`, "color: #ffb300; font-weight: bold;");
+      const danhSachCanThu = toOngDayMat.length > 0 ? toOngDayMat : [];
+      if (danhSachCanThu.length === 0) {
+        return false;
+      }
 
+      console.log(`%c[SFL Mật Ong] 🍯 Thu hoạch ${danhSachCanThu.length} tổ ong đã đầy mật trên màn hình...`, "color: #ffb300; font-weight: bold;");
       let daThu = 0;
-      for (const to of toOngs) {
+      for (const to of danhSachCanThu) {
         clickTam(to);
         daThu++;
-        await ngu(300 + Math.floor(Math.random() * 100));
+        await ngu(400 + Math.floor(Math.random() * 150));
       }
 
       return daThu > 0;
@@ -168,6 +237,9 @@
       return false;
     } finally {
       dangBan = false;
+      if (typeof S.nhaKhoa === "function") {
+        S.nhaKhoa("honey");
+      }
     }
   }
 

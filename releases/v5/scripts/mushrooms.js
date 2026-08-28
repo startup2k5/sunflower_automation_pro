@@ -147,7 +147,7 @@
       const ungVien = doc.querySelectorAll("div.mushroom, div[class*='mushroom'], .react-responsive-spritesheet-container__move");
       for (const el of ungVien) {
         const rootEl = el.closest("div.mushroom, div[class*='mushroom']") || el;
-        const placement = rootEl.closest('[data-map-placement="true"]');
+        const placement = rootEl.closest('[data-map-placement]');
         const target = placement || rootEl;
         if (daThem.has(target) || !xemPhanTuRanh(target)) continue;
 
@@ -169,7 +169,7 @@
       }
 
       // 2. Quét các placement trên map (fallback)
-      const cacO = doc.querySelectorAll('[data-map-placement="true"]');
+      const cacO = doc.querySelectorAll('[data-map-placement]');
       for (const el of cacO) {
         if (daThem.has(el) || !xemPhanTuRanh(el)) continue;
         const cacImg = Array.from(el.querySelectorAll("img")).map((i) => (i.src || "").toLowerCase());

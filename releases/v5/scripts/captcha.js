@@ -341,46 +341,56 @@
       await ngu(80 + Math.floor(Math.random() * 60));
     }
 
-    // Chờ 250ms để game kích hoạt trạng thái hoàn tất
-    await ngu(250);
-
-    // Tìm và bấm nút Claim / Xác nhận / Continue / Tiếp tục / Open nếu có
-    for (const d of layTaiLieuGame()) {
-      const cacNut = d.querySelectorAll("button, [role='button'], div[class*='cursor-pointer']");
-      for (const btn of cacNut) {
-        if (!xemPhanTuRanh(btn)) continue;
-        const txt = (btn.textContent || "").trim().toLowerCase();
-        if (
-          txt.includes("claim") ||
-          txt.includes("continue") ||
-          txt.includes("tiếp tục") ||
-          txt.includes("xác nhận") ||
-          txt.includes("open") ||
-          txt.includes("sweet") ||
-          txt.includes("awesome")
-        ) {
-          console.log(`[SFL Captcha] 🎁 Bấm nút hoàn thành: "${txt}"`);
-          clickTam(btn);
-          await ngu(250);
-          break;
+    // Đợi ClaimReward popup xuất hiện (onOpen) và bấm nút Claim / Woohoo / Tiếp tục (tối đa 3.5s)
+    let daBamClaim = false;
+    for (let loop = 0; loop < 15; loop += 1) {
+      await ngu(250);
+      for (const d of layTaiLieuGame()) {
+        const cacNut = d.querySelectorAll("button, [role='button'], div[class*='cursor-pointer']");
+        for (const btn of cacNut) {
+          if (!xemPhanTuRanh(btn)) continue;
+          const txt = (btn.textContent || "").trim().toLowerCase();
+          if (
+            txt === "claim" ||
+            txt.includes("claim") ||
+            txt.includes("continue") ||
+            txt.includes("tiếp tục") ||
+            txt.includes("xác nhận") ||
+            txt.includes("open") ||
+            txt.includes("sweet") ||
+            txt.includes("awesome") ||
+            txt.includes("woohoo")
+          ) {
+            console.log(`%c[SFL Captcha] 🎁 Bấm nút nhận thưởng hoàn tất Captcha: "${txt}"`, "color: #00e676; font-weight: bold;");
+            clickTam(btn);
+            daBamClaim = true;
+            await ngu(400);
+            break;
+          }
         }
+        if (daBamClaim) break;
       }
+      if (daBamClaim) break;
     }
 
     return true;
   }
 
-  // ═══════ Đóng hoàn toàn popup Captcha bằng nút Close ═══════
+  // ═══════ Đóng popup thông thường (TUYỆT ĐỐI KHÔNG CHẠY KHI ĐANG CÓ CAPTCHA) ═══════
   async function dongPopupCaptcha() {
+    // Captcha trong Sunflower Land KHÔNG CÓ NÚT CLOSE, chỉ đóng khi người chơi giải xong!
+    if (isCaptchaOpen()) {
+      return false;
+    }
+
     const taiLieu = layTaiLieuGame();
     for (const doc of taiLieu) {
       if (!doc || !doc.body) continue;
 
-      // 1. Tìm nút ảnh close
-      const cacAnhClose = doc.querySelectorAll('img[src*="close"], img[src*="cancel"]');
+      // 1. Tìm nút ảnh close (bỏ qua icon cancel)
+      const cacAnhClose = doc.querySelectorAll('img[src*="close"]');
       for (const img of cacAnhClose) {
         if (xemPhanTuRanh(img)) {
-          console.log("[SFL Captcha] ❌ Bấm nút ảnh Close để thoát popup...");
           const nut = img.closest("button, [role='button'], div[class*='cursor-pointer']") || img;
           clickTam(nut);
           await ngu(200);
@@ -393,8 +403,7 @@
       for (const btn of cacNut) {
         if (!xemPhanTuRanh(btn)) continue;
         const txt = (btn.textContent || "").trim().toLowerCase();
-        if (txt === "close" || txt === "đóng" || txt === "ok" || txt === "x") {
-          console.log(`[SFL Captcha] ❌ Bấm nút "${txt}" để thoát popup...`);
+        if (txt === "close" || txt === "đóng" || txt === "ok") {
           clickTam(btn);
           await ngu(200);
           return true;
@@ -440,7 +449,7 @@
     }
 
     // Bấm nút nhận thưởng / Claim / Continue nếu có
-    for (let loop = 0; loop < 4; loop += 1) {
+    for (let loop = 0; loop < 6; loop += 1) {
       let coNut = false;
       for (const d of layTaiLieuGame()) {
         const cacNut = d.querySelectorAll("button, [role='button'], div[class*='cursor-pointer']");
@@ -460,12 +469,12 @@
       if (!coNut) break;
     }
 
-    await dongPopupCaptcha();
     return true;
   }
 
   // Giải Popup Claim thông thường
   async function giaiPopupClaim(doc) {
+    if (isCaptchaOpen()) return false;
     console.log("[SFL Captcha] 🎁 Đang xử lý Popup Nhận thưởng...");
     await ngu(300);
 
@@ -489,7 +498,7 @@
 
   // Điều phối giải Captcha
   async function kiemTraVaGiaiCaptcha() {
-    if (!isCaptchaOpen()) return false;
+    if (!isCaptchaOpen()) return true;
 
     // Chiếm khóa ưu tiên cao nhất
     if (typeof S.xinKhoa === "function" && !S.xinKhoa("captcha")) {
@@ -497,7 +506,7 @@
     }
 
     dangBan = true;
-    console.log("%c[SFL Captcha] 🚨 PHÁT HIỆN CAPTCHA! Tạm dừng mọi luồng để giải siêu tốc...", "color: #ff3838; font-weight: bold; font-size: 14px;");
+    console.log("%c[SFL Captcha] 🚨 PHÁT HIỆN CAPTCHA! Tạm dừng mọi luồng để tập trung giải siêu tốc...", "color: #ff3838; font-weight: bold; font-size: 14px;");
 
     try {
       const taiLieu = layTaiLieuGame();
@@ -506,43 +515,54 @@
       for (const doc of taiLieu) {
         if (!doc || !doc.body) continue;
 
-        // 1. Kiểm tra Rương kho báu ("Tap the chest to open it")
-        const txtBody = (doc.body.textContent || "").toLowerCase();
-        const coRuong = txtBody.includes("tap the chest") || txtBody.includes("chest to open") || !!doc.querySelector("img.w-16");
-        if (coRuong) {
-          daGiai = await giaiTreasureChest(doc);
-          if (daGiai) break;
-        }
-
-        // 2. Kiểm tra Grid 16 ô (Goblin, Người xương, Moon Seeker, Zombie)
+        // 1. Kiểm tra Grid 16 ô (Stop the Goblins / Moon Seeker / Skeleton / Zombie)
         const wraps = doc.querySelectorAll("div.flex.flex-wrap.justify-center.items-center, div.flex.flex-wrap");
+        let coGrid16 = false;
         for (const w of wraps) {
           if (!xemPhanTuRanh(w)) continue;
           const cellCount = Array.from(w.children).filter(
             (el) => el && el.tagName === "DIV" && el.classList?.contains("cursor-pointer"),
           ).length;
           if (cellCount >= 16) {
+            coGrid16 = true;
             daGiai = await giaiGridCaptcha(doc, w);
-            if (daGiai) await dongPopupCaptcha();
             break;
           }
         }
 
-        if (daGiai) break;
-
-        // 3. Xử lý popup claim thông thường
-        daGiai = await giaiPopupClaim(doc);
-        if (daGiai) break;
-      }
-
-      // Đợi modal đóng hẳn với polling siêu nhanh 150ms
-      for (let i = 0; i < 20; i += 1) {
-        await ngu(150);
-        if (!isCaptchaOpen()) {
-          console.log("%c[SFL Captcha] ✔️ ĐÃ GIẢI VÀ ĐÓNG CAPTCHA XONG! Tiếp tục canh tác...", "color: #4caf50; font-weight: bold; font-size: 14px;");
+        // NẾU LÀ GRID 16 Ô: Dừng tại đây, TUYỆT ĐỐI KHÔNG rơi vào xử lý Popup Claim hay bấm nút Close!
+        if (coGrid16) {
           break;
         }
-        await dongPopupCaptcha();
+
+        // 2. Kiểm tra Rương kho báu ("Tap the chest to open it")
+        const txtBody = (doc.body.textContent || "").toLowerCase();
+        const coRuong = txtBody.includes("tap the chest") || txtBody.includes("chest to open");
+        if (coRuong) {
+          daGiai = await giaiTreasureChest(doc);
+          break;
+        }
+
+        // 3. Xử lý popup claim thông thường (chỉ chạy khi không phải Captcha challenge)
+        if (!isCaptchaOpen()) {
+          daGiai = await giaiPopupClaim(doc);
+          if (daGiai) break;
+        }
+      }
+
+      // Đợi modal đóng hẳn với kiểm tra polling
+      for (let i = 0; i < 15; i += 1) {
+        await ngu(200);
+        if (!isCaptchaOpen()) {
+          console.log("%c[SFL Captcha] ✔️ ĐÃ GIẢI XONG VÀ ĐÓNG CAPTCHA HOÀN TOÀN!", "color: #00e676; font-weight: bold; font-size: 14px;");
+          return true;
+        }
+      }
+
+      // Nếu Captcha vẫn còn hiển thị, trả về false để hệ thống điều phối TIẾP TỤC ĐÓNG BĂNG, không chạy luồng khác!
+      if (isCaptchaOpen()) {
+        console.log("%c[SFL Captcha] ⚠️ Captcha vẫn chưa đóng. Tiếp tục giữ khóa và đóng băng toàn bộ luồng...", "color: #ff9800; font-weight: bold;");
+        return false;
       }
 
       return true;
@@ -551,7 +571,9 @@
       return false;
     } finally {
       dangBan = false;
-      if (typeof S.nhaKhoa === "function") S.nhaKhoa();
+      S.__captchaActive = false;
+      S.__captchaInterrupted = false;
+      if (typeof S.nhaKhoa === "function") S.nhaKhoa("captcha");
     }
   }
 
@@ -572,6 +594,9 @@
       console.error("[SFL Captcha] Lỗi giải nhanh Captcha:", err);
     } finally {
       dangGiaiNhanh = false;
+      S.__captchaActive = false;
+      S.__captchaInterrupted = false;
+      if (typeof S.nhaKhoa === "function") S.nhaKhoa("captcha");
     }
   }
 

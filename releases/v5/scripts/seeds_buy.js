@@ -115,12 +115,17 @@
     if (!el || !xemPhanTuRanh(el)) return false;
     const src = (el.src || el.getAttribute?.("src") || "").toLowerCase();
     const alt = (el.alt || el.getAttribute?.("alt") || "").toLowerCase();
+
+    const pText = (el.parentElement?.textContent || el.closest?.("div, button, [role='button']")?.textContent || "").toLowerCase();
+    if (pText.includes("vip") || src.includes("vip")) return false;
+    if (el.closest?.('[class*="vip"], [id*="vip"], [data-name*="vip"]')) return false;
+
     if (src.includes("compost") || src.includes("closed") || src.includes("building") || src.includes("island")) {
       return false;
     }
     const laAnhClose = src.includes("/ui/close") || src.includes("/icons/close") || src.includes("close.png") || src.includes("cancel.png") || alt === "close" || alt === "cancel";
     const laAriaClose = el.getAttribute?.("aria-label") === "close";
-    const trongDialog = !!el.closest?.('[role="dialog"], [role="modal"], div[class*="modal"], div[style*="dark_border"], .scrollable');
+    const trongDialog = !!el.closest?.('[role="dialog"], [role="modal"], div[class*="modal"], .fixed.inset-0');
     return (laAnhClose || laAriaClose) && trongDialog;
   }
 
@@ -133,7 +138,7 @@
         const cacAnhClose = doc.querySelectorAll('img[src*="/ui/close"], img[src*="close.png"], img[src*="cancel.png"], button[aria-label="close"]');
         for (const img of cacAnhClose) {
           if (!laNutCloseChuan(img)) continue;
-          const nut = img.closest("button, [role='button'], div.cursor-pointer, [class*='cursor-pointer']") || img;
+          const nut = img.closest("button, [role='button']") || img;
           clickTam(nut);
           coPopupDong = true;
           await ngu(250);
@@ -167,7 +172,7 @@
           u.includes("betty");
         if (!ok) continue;
 
-        const clickable = img.closest(".cursor-pointer, [data-map-placement='true'], [class*='cursor-pointer']") || img;
+        const clickable = img.closest(".cursor-pointer, [data-map-placement], [class*='cursor-pointer']") || img;
         if (clickable && xemPhanTuRanh(clickable)) return clickable;
       }
     }
@@ -315,6 +320,7 @@
       if (!tx || tx.length > 25) continue;
       if (/restock|replenish|bổ\s*sung|hoàn\s*lại/i.test(tx)) continue;
       if (/buy\s+all|comprar\s+todos?|acheter\s+tout/i.test(tx)) continue;
+      if (/vip/i.test(tx) || btn.querySelector('img[src*="vip"]')) continue;
 
       // Nút mua có thể hiển thị ngôn ngữ khác nhau (Buy / Mua / Comprar / Acheter / Kaufen / 购买 ...)
       if (
@@ -331,10 +337,17 @@
     return hopLe[0];
   }
 
-  // ═══════ QUY TRÌNH MUA HẠT GIỐNG TẠI CỬA HÀNG BETTY (CHUẨN V4) ═══════
+  // ═══════ QUY TRÌNH MUA HẠT GIỐNG QUA GAME BRIDGE (SIÊU TỐC KHÔNG DÙNG DOM) ═══════
   // CHỈ CHẠY 1 LẦN DUY NHẤT Ở VÒNG 1, TỪ VÒNG 2 BỎ QUA CHO ĐẾN KHI TẢI LẠI TRANG
   async function tickSeedsBuy(force = false) {
     if (dangBan) return false;
+
+    // 0. KIỂM TRA SỐ DƯ TIỀN TỆ: NẾU < 1 XU THÌ BỎ QUA LUỒNG MUA HẠT
+    const currentCoins = Number(S.gameState?.coins ?? S.userData?.coins ?? 0);
+    if (currentCoins < 1) {
+      console.log(`%c[SFL Mua Hạt Giống] 💰 Số dư hiện tại (${currentCoins.toFixed(2)} xu < 1 xu) -> Bỏ qua luồng mua hạt giống để tiết kiệm tiền.`, "color: #ff9800; font-weight: bold;");
+      return false;
+    }
 
     if (S.__daMuaHatGiongVongDau && !force) {
       console.log("%c[SFL Mua Hạt Giống] ℹ️ Luồng mua hạt giống đã hoàn thành ở vòng 1 -> Bỏ qua từ vòng 2 cho đến khi tải lại trang.", "color: #9e9e9e;");
@@ -352,8 +365,50 @@
         return false;
       }
 
-      console.log("%c[SFL Mua Hạt Giống] 🌻 Bắt đầu luồng mua hạt giống tại cửa hàng Betty (Chuẩn v4)...", "color: #ff9800; font-weight: bold;");
+      console.log("%c[SFL Mua Hạt Giống] 🌻 Bắt đầu luồng mua hạt giống tự động qua Game Bridge (không dùng DOM)...", "color: #ff9800; font-weight: bold; font-size: 13px;");
 
+      // ── 1. ƯU TIÊN 100% GAME BRIDGE (MUA TOÀN BỘ CROPS + FRUITS + FLOWERS + GREENHOUSE TỪ RẺ ĐẾN ĐẮT) ──
+      if (typeof S.buySeasonalSeedsBridge === "function") {
+        const res = await S.buySeasonalSeedsBridge(null, 5000);
+        if (res && res.ok) {
+          const list = res.boughtList || res.bought || [];
+          if (list.length > 0) {
+            console.log(
+              `%c[SFL Mua Hạt Giống] 🎉 ĐÃ MUA THÀNH CÔNG ${list.length} LOẠI HẠT GIỐNG ĐÚNG MÙA QUA GAME BRIDGE! (Đã chi: ${res.totalCoinsSpent.toLocaleString()} Coins | Còn lại: ${res.remainingCoins?.toLocaleString()} Coins)`,
+              "color: #00e676; font-weight: bold; font-size: 14px;"
+            );
+            console.table(
+              list.map((b) => ({
+                "Hạt Giống": b.seed,
+                "Phân Loại": b.type ? b.type.toUpperCase() : (b.category || "CROP"),
+                "Số Lượng": `+${b.amount}`,
+                "Đơn Giá": `${b.unitPrice} Coins`,
+                "Tổng Chi": `${b.totalCost.toLocaleString()} Coins`,
+              }))
+            );
+          } else {
+            console.log(
+              "%c[SFL Mua Hạt Giống] ℹ️ Kho hạt giống đã đủ định mức hoặc cửa hàng tạm thời hết hàng / không đủ tiền mua thêm.",
+              "color: #4caf50; font-weight: bold;"
+            );
+          }
+          return true;
+        }
+      }
+
+      // ── 2. FALLBACK DOM NẾU BRIDGE CHƯA KẾT NỐI ──
+      // Kiểm tra xem trong kho đã đủ hạt giống chưa, nếu > 30 hạt và không force thì không cần mở popup Betty liên tục
+      const inv = S.gameState?.inventory || S.userData?.inventory || {};
+      let tongHatDatRuong = 0;
+      for (const [k, v] of Object.entries(inv)) {
+        if (k.endsWith(" Seed")) tongHatDatRuong += Number(v || 0);
+      }
+      if (!force && tongHatDatRuong >= 30 && S.__cooldownSeedsBuyDOM && Date.now() < S.__cooldownSeedsBuyDOM) {
+        console.log(`[SFL Mua Hạt Giống] ℹ️ Kho đồ còn ${tongHatDatRuong} hạt giống (đủ dùng) -> Bỏ qua mở popup.`);
+        return false;
+      }
+
+      console.log("[SFL Mua Hạt Giống] ⚠️ Game Bridge chưa sẵn sàng, chuyển sang Fallback DOM...");
       let modalInfo = timModalBetty();
       if (!modalInfo) {
         const shop = timCuaHangBetty();
@@ -413,6 +468,9 @@
           if (rectS.left + rectS.width / 2 > midX) continue;
           const txt = (s.textContent || "").trim().toLowerCase();
           if (txt === "sell" || txt === "buy" || txt === "guide" || txt.startsWith("sell") || txt.startsWith("guide")) continue;
+
+          // BỎ QUA Ô ĐÒI HỎI VIP HOẶC CÓ ICON VIP
+          if (txt.includes("vip") || s.querySelector('img[src*="vip"]')) continue;
           slotsKhaDung.push(s);
         }
 
@@ -444,6 +502,7 @@
       }
 
       console.log(`%c[SFL Mua Hạt Giống] ✔️ Hoàn tất phiên mua hạt giống (Đã mua ${soLoaiDaMua} loại hạt)!`, "color: #00e676; font-weight: bold; font-size: 13px;");
+      S.__cooldownSeedsBuyDOM = Date.now() + 60000;
       await dongHetTatCaPopup();
       return soLoaiDaMua > 0;
     } catch (err) {

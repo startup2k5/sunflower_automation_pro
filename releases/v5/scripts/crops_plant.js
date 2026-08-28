@@ -11,12 +11,39 @@
   let dangBan = false;
   const ngu = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  // Danh sách hạt giống cho đất thường theo 4 Mùa
+  // BẢNG THỜI GIAN PHÁT TRIỂN CỦA CÂY TRỒNG (TÍNH BẰNG GIÂY) - SẮP XẾP TỪ NGẮN NGÀY ĐẾN DÀI NGÀY
+  const CROP_GROWTH_SECONDS = {
+    "Sunflower Seed": 60,            // 1 phút (ngắn nhất)
+    "Potato Seed": 300,             // 5 phút
+    "Rhubarb Seed": 600,            // 10 phút
+    "Pumpkin Seed": 1800,           // 30 phút
+    "Zucchini Seed": 1800,          // 30 phút
+    "Carrot Seed": 3600,            // 1 giờ
+    "Yam Seed": 3600,               // 1 giờ
+    "Cabbage Seed": 7200,           // 2 giờ
+    "Broccoli Seed": 7200,          // 2 giờ
+    "Soybean Seed": 10800,          // 3 giờ
+    "Beetroot Seed": 14400,         // 4 giờ
+    "Pepper Seed": 14400,           // 4 giờ
+    "Cauliflower Seed": 28800,      // 8 giờ
+    "Parsnip Seed": 43200,          // 12 giờ
+    "Eggplant Seed": 57600,         // 16 giờ
+    "Corn Seed": 72000,             // 20 giờ
+    "Onion Seed": 72000,            // 20 giờ
+    "Radish Seed": 86400,           // 24 giờ
+    "Wheat Seed": 86400,            // 24 giờ
+    "Turnip Seed": 86400,           // 24 giờ
+    "Kale Seed": 129600,            // 36 giờ
+    "Artichoke Seed": 129600,       // 36 giờ
+    "Barley Seed": 172800,          // 48 giờ (dài nhất)
+  };
+
+  // Danh sách hạt giống cho đất thường theo 4 Mùa - Ưu tiên tăng dần từ ngắn ngày đến dài ngày
   const SEASONAL_CROP_PLOT_SEEDS = {
-    spring: ["Sunflower Seed", "Potato Seed", "Rhubarb Seed", "Carrot Seed", "Cabbage Seed", "Soybean Seed"],
-    summer: ["Sunflower Seed", "Potato Seed", "Pepper Seed", "Corn Seed", "Zucchini Seed", "Soybean Seed"],
-    autumn: ["Sunflower Seed", "Potato Seed", "Pumpkin Seed", "Carrot Seed", "Broccoli Seed", "Beetroot Seed"],
-    winter: ["Sunflower Seed", "Potato Seed", "Yam Seed", "Beetroot Seed", "Cauliflower Seed", "Parsnip Seed", "Wheat Seed", "Kale Seed", "Barley Seed"],
+    spring: ["Sunflower Seed", "Rhubarb Seed", "Carrot Seed", "Cabbage Seed", "Soybean Seed", "Corn Seed", "Wheat Seed", "Kale Seed", "Barley Seed"],
+    summer: ["Sunflower Seed", "Potato Seed", "Zucchini Seed", "Pepper Seed", "Beetroot Seed", "Cauliflower Seed", "Eggplant Seed", "Radish Seed", "Wheat Seed"],
+    autumn: ["Potato Seed", "Pumpkin Seed", "Carrot Seed", "Yam Seed", "Broccoli Seed", "Soybean Seed", "Wheat Seed", "Barley Seed", "Artichoke Seed"],
+    winter: ["Sunflower Seed", "Potato Seed", "Cabbage Seed", "Beetroot Seed", "Cauliflower Seed", "Parsnip Seed", "Onion Seed", "Turnip Seed", "Wheat Seed", "Kale Seed"],
   };
 
   const CROP_SLUGS = {
@@ -38,6 +65,7 @@
     "Wheat Seed": ["wheat", "wheat_seed"],
     "Kale Seed": ["kale", "kale_seed"],
     "Barley Seed": ["barley", "barley_seed"],
+    "Artichoke Seed": ["artichoke", "artichoke_seed"],
   };
 
   function layTaiLieuGame() {
@@ -68,7 +96,10 @@
   function xemPhanTuRanh(el) {
     if (!el) return false;
     const rect = el.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return false;
+    const hasSize = rect.width > 0 && rect.height > 0;
+    const hasChildSize = el.firstElementChild ? el.firstElementChild.getBoundingClientRect().width > 0 : false;
+    const hasImgSize = el.querySelector("img") ? el.querySelector("img").getBoundingClientRect().width > 0 : false;
+    if (!hasSize && !hasChildSize && !hasImgSize && el.offsetWidth <= 0 && el.offsetHeight <= 0) return false;
     const view = el.ownerDocument?.defaultView || window;
     let style;
     try { style = view.getComputedStyle(el); } catch (_e) { return false; }
@@ -97,9 +128,8 @@
     const view = el.ownerDocument?.defaultView || window;
     try { if (view && typeof view.focus === "function") view.focus(); } catch (_e) {}
     const rect = el.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return false;
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
+    const cx = rect.left + (rect.width > 0 ? rect.width / 2 : 16);
+    const cy = rect.top + (rect.height > 0 ? rect.height / 2 : 16);
 
     const baseOpts = {
       bubbles: true,
@@ -119,15 +149,26 @@
     try { el.focus?.({ preventScroll: true }); } catch (_e) {}
 
     try {
+      try { el.dispatchEvent(new PointerEvent("pointerdown", downOpts)); } catch (_p1) {}
       el.dispatchEvent(new MouseEvent("mousedown", downOpts));
+      try { el.dispatchEvent(new PointerEvent("pointerup", upOpts)); } catch (_p2) {}
       el.dispatchEvent(new MouseEvent("mouseup", upOpts));
       el.dispatchEvent(new MouseEvent("click", baseOpts));
       try { el.click?.(); } catch (_e2) {}
       kichHoatReactProps(el);
       if (el.parentElement) kichHoatReactProps(el.parentElement);
+      if (el.firstElementChild) kichHoatReactProps(el.firstElementChild);
     } catch (_e2) {}
 
-    const placement = el.closest?.('[data-map-placement="true"]') || el;
+    const placement = el.closest?.('[data-map-placement]') || el;
+    if (placement && placement !== el) {
+      try {
+        try { placement.dispatchEvent(new PointerEvent("pointerdown", downOpts)); } catch (_p3) {}
+        placement.dispatchEvent(new MouseEvent("click", baseOpts));
+        kichHoatReactProps(placement);
+      } catch (_e3) {}
+    }
+
     setTimeout(() => {
       try {
         if (typeof el.blur === "function") el.blur();
@@ -189,13 +230,18 @@
     if (!el || !xemPhanTuRanh(el)) return false;
     const src = (el.src || el.getAttribute?.("src") || "").toLowerCase();
     const alt = (el.alt || el.getAttribute?.("alt") || "").toLowerCase();
+
+    const pText = (el.parentElement?.textContent || el.closest?.("div, button, [role='button']")?.textContent || "").toLowerCase();
+    if (pText.includes("vip") || src.includes("vip")) return false;
+    if (el.closest?.('[class*="vip"], [id*="vip"], [data-name*="vip"]')) return false;
+
     // TUYỆT ĐỐI KHÔNG ĐƯỢC NHẬN NHẦM THÙNG COMPOST CLOSED HOẶC ĐỒ TRÊN ĐẢO!
     if (src.includes("compost") || src.includes("closed") || src.includes("building") || src.includes("island")) {
       return false;
     }
     const laAnhClose = src.includes("/ui/close") || src.includes("/icons/close") || src.includes("close.png") || src.includes("cancel.png") || alt === "close" || alt === "cancel";
     const laAriaClose = el.getAttribute?.("aria-label") === "close";
-    const trongDialog = !!el.closest?.('[role="dialog"], [role="modal"], div[class*="modal"], div[style*="dark_border"], .scrollable');
+    const trongDialog = !!el.closest?.('[role="dialog"], [role="modal"], div[class*="modal"], .fixed.inset-0');
     return (laAnhClose || laAriaClose) && trongDialog;
   }
 
@@ -206,7 +252,7 @@
       const cacBtnClose = doc.querySelectorAll('img[src*="/ui/close"], img[src*="close.png"], img[src*="cancel.png"], button[aria-label="close"]');
       for (const img of cacBtnClose) {
         if (!laNutCloseChuan(img)) continue;
-        const btn = img.closest("button, [role='button'], div.cursor-pointer") || img;
+        const btn = img.closest("button, [role='button']") || img;
         clickTam(btn);
         await ngu(250);
         break;
@@ -311,7 +357,21 @@
         }
       }
 
-      const slot = timSlotHatGiong(doc, tenHatChon);
+      let slot = timSlotHatGiong(doc, tenHatChon);
+      if (!slot) {
+        // Thử click sub-tab "Seeds"
+        const subTabs = doc.querySelectorAll(".flex.items-center.cursor-pointer, button, [role='tab']");
+        for (const st of subTabs) {
+          const stTxt = (st.textContent || "").trim();
+          if (stTxt.includes("Seeds") || !!st.querySelector('img[src*="seeds"], img[src*="sunflower_seed"]')) {
+            clickTam(st);
+            await ngu(300);
+            break;
+          }
+        }
+        slot = timSlotHatGiong(doc, tenHatChon);
+      }
+
       if (slot) {
         console.log(`%c[SFL Trồng Ruộng] 🌱 Đã click chọn ${tenHatChon} trong giỏ đồ!`, "color: #4caf50; font-weight: bold;");
         clickTam(slot);
@@ -322,7 +382,26 @@
     }
 
     await dongHetPopup();
-    return null; // KHÔNG CẦM ĐƯỢC HẠT TRÊN TAY -> TRẢ VỀ NULL, TUYỆT ĐỐI KHÔNG CLICK KHỐNG!
+    // Vẫn trả về thông tin hạt nếu có số lượng > 0 trong kho để tiến hành click gieo hạt trên đảo
+    return { tenHat: tenHatChon, soLuong: soLuongHat };
+  }
+
+  // Danh sách từ khóa cấm (tuyệt đối không click nhầm vào bè, NPC, công trình, hoa quả...)
+  const TU_KHOA_CAM = [
+    "raft", "boat", "prestige", "volcano_prestige_raft", "ferry", "ship", "sail",
+    "npc", "bumpkin", "character", "portal", "travel", "island", "scene",
+    "flower_bed", "/flowers/", "fruit_patch", "/fruit/", "composter",
+    "tree", "rock", "beehive", "building", "workbench", "tent", "house",
+    "blacksmith", "chicken", "barn", "hen_house", "pig", "cow", "sheep",
+    "decorations", "land/"
+  ];
+
+  function laPhanTuBiCam(duongDanArr, noiDungStr) {
+    const text = (noiDungStr || "").toLowerCase();
+    for (const kw of TU_KHOA_CAM) {
+      if (duongDanArr.some((s) => s.includes(kw))) return true;
+    }
+    return false;
   }
 
   // Quét danh sách các ô RUỘNG ĐẤT TRỐNG trên đảo để gieo hạt
@@ -334,29 +413,63 @@
     for (const doc of taiLieu) {
       if (!doc || !doc.body) continue;
 
-      const cacO = doc.querySelectorAll('[data-map-placement="true"]');
+      // 1. Quét trực tiếp từ tất cả các thẻ ảnh đất ruộng trên DOM (loại bỏ từ khóa volcano chung chung)
+      const cacAnhDat = Array.from(doc.querySelectorAll("img[src*='soil'], img[src*='sand_dug'], img[src*='volcanosoil'], img[src*='volcano_soil']"));
+      for (const img of cacAnhDat) {
+        if (!xemPhanTuRanh(img)) continue;
+        const src = (img.currentSrc || img.src || img.getAttribute("src") || "").toLowerCase();
+
+        // Bỏ qua nếu dính từ khóa cấm (bè, NPC, công trình...)
+        if (TU_KHOA_CAM.some((kw) => src.includes(kw))) continue;
+
+        // Bỏ qua đất khô / cằn (chưa có giếng nước)
+        if (src.includes("soil_dry") || src.includes("soil_not_fertile") || src.includes("volcanosoildry")) continue;
+
+        const placement = img.closest('[data-map-placement]') || img.closest('div.absolute[style*="calc(50%"]') || img.parentElement;
+        if (!placement || daThem.has(placement)) continue;
+
+        const cacAnhTrongO = Array.from(placement.querySelectorAll("img")).map((i) => (i.currentSrc || i.src || i.getAttribute("src") || "").toLowerCase());
+        const noiDung = (placement.textContent || "").trim().toLowerCase();
+
+        // Bỏ qua nếu container chứa từ khóa cấm
+        if (laPhanTuBiCam(cacAnhTrongO, noiDung)) continue;
+
+        // Đang có cây hoặc đếm giờ -> Bỏ qua
+        const coDemGio = /\d+\s*(?:mins?|secs?|hours?|hrs?|m\b|s\b|h\b)|\d+:\d+/i.test(noiDung);
+        const laCayDangLon = cacAnhTrongO.some((s) => s.includes("seedling") || s.includes("halfway") || s.includes("almost") || s.includes("growing") || (s.includes("sprout") && !s.includes("sprout_mix")));
+        const anhCayChin = cacAnhTrongO.some((s) => (s.includes("/crops/") || s.includes("/volcano/crops/")) && (s.includes("plant") || s.includes("crop")) && !s.includes("soil") && !s.includes("seed") && !s.includes("fertiliser"));
+        if (coDemGio || laCayDangLon || anhCayChin) continue;
+
+        const nutClick = placement.querySelector(".cursor-pointer, [class*='cursor-pointer']") || img.parentElement || placement;
+        const coords = phanTichToaDo(placement.getAttribute("style") || "");
+        daThem.add(placement);
+        danhSach.push({ el: nutClick, rootEl: placement, coords });
+      }
+
+      // 2. Quét bổ sung từ tất cả container trên bản đồ
+      const cacO = Array.from(doc.querySelectorAll('[data-map-placement], div.absolute[style*="calc(50%"]'));
       for (const el of cacO) {
-        if (daThem.has(el) || !xemPhanTuRanh(el)) continue;
+        if (!el || daThem.has(el) || !xemPhanTuRanh(el)) continue;
 
         const cacAnh = Array.from(el.querySelectorAll("img"));
         const duongDan = cacAnh.map((i) => (i.getAttribute("src") || i.src || "").toLowerCase());
         const noiDung = (el.textContent || "").trim().toLowerCase();
 
-        // Bỏ qua hoa, quả, composter, cây, đá
-        if (duongDan.some((s) => s.includes("flower_bed") || s.includes("/flowers/") || s.includes("fruit_patch") || s.includes("/fruit/") || s.includes("composter") || s.includes("tree") || s.includes("rock") || s.includes("beehive"))) continue;
+        // Bỏ qua nếu container chứa từ khóa cấm
+        if (laPhanTuBiCam(duongDan, noiDung)) continue;
 
-        // Phải là đất ruộng
-        const laRuong = duongDan.some((s) => s.includes("soil") || s.includes("sand_dug") || s.includes("/crops/")) || (el.innerHTML || "").toLowerCase().includes("soil");
+        // Phải là đất ruộng (soil, volcanosoil, sand_dug)
+        const laRuong = duongDan.some((s) => s.includes("soil") || s.includes("sand_dug") || s.includes("volcanosoil") || s.includes("volcano_soil")) || (el.innerHTML || "").toLowerCase().includes("soil");
         if (!laRuong) continue;
 
         // Bỏ qua đất khô cằn / infertile (thiếu giếng nước)
-        const laDatKho = duongDan.some((s) => s.includes("soil_dry") || s.includes("soil_not_fertile"));
+        const laDatKho = duongDan.some((s) => s.includes("soil_dry") || s.includes("soil_not_fertile") || s.includes("volcanosoildry"));
         if (laDatKho) continue;
 
         // Đang có cây hoặc đếm giờ -> Bỏ qua
         const coDemGio = /\d+\s*(?:mins?|secs?|hours?|hrs?|m\b|s\b|h\b)|\d+:\d+/i.test(noiDung);
-        const laCayDangLon = duongDan.some((s) => s.includes("seedling") || s.includes("halfway") || s.includes("growing") || (s.includes("sprout") && !s.includes("sprout_mix")));
-        const anhCayChin = duongDan.some((s) => (s.includes("/crops/") || s.includes("/volcano/crops/")) && (s.includes("plant") || s.includes("crop")) && !s.includes("soil") && !s.includes("seed"));
+        const laCayDangLon = duongDan.some((s) => s.includes("seedling") || s.includes("halfway") || s.includes("almost") || s.includes("growing") || (s.includes("sprout") && !s.includes("sprout_mix")));
+        const anhCayChin = duongDan.some((s) => (s.includes("/crops/") || s.includes("/volcano/crops/")) && (s.includes("plant") || s.includes("crop")) && !s.includes("soil") && !s.includes("seed") && !s.includes("fertiliser"));
         if (coDemGio || laCayDangLon || anhCayChin) continue;
 
         const nutClick = el.querySelector(".cursor-pointer, [class*='cursor-pointer']") || el;
@@ -383,42 +496,115 @@
         return false;
       }
 
-      // 2. Quét các ô ruộng đất trống
+      // 1. LUÔN LUÔN QUÉT LẠI BẢN ĐỒ & TÀI NGUYÊN MỚI NHẤT TRƯỚC KHI TRỒNG
+      let state = null;
+      if (typeof S.requestBridgeState === "function") {
+        state = await S.requestBridgeState(2000);
+      }
+      if (!state) {
+        state = S.gameState;
+      }
+
+      // Trích xuất danh sách đất ruộng từ dữ liệu Bridge State (CHỈ LẤY CÁC Ô ĐÃ ĐẶT TRÊN MAP)
+      let cropList = [];
+      if (Array.isArray(state?.resources?.crops?.list)) {
+        cropList = state.resources.crops.list.filter(
+          (p) => p && (p.x !== undefined || p.y !== undefined)
+        );
+      } else {
+        const cropsState = state?.crops || {};
+        cropList = Object.entries(cropsState)
+          .filter(([id, p]) => (p?.x !== undefined || p?.coordinates?.x !== undefined) && !p?.removedAt)
+          .map(([id, p]) => {
+            const plantedAt = Number(p?.crop?.plantedAt ?? p?.plantedAt) || 0;
+            const cropName = String(p?.crop?.name || p?.cropName || "").trim();
+            const isEmpty = !cropName || plantedAt <= 0;
+            return {
+              id,
+              isEmpty,
+              cropName: cropName || "Empty",
+              fertiliser: p?.fertiliser?.name || null,
+            };
+          });
+      }
+
+      const emptyPlots = cropList.filter((p) => p.isEmpty);
+      const fertilisedEmptyPlots = cropList.filter((p) => p.isEmpty && p.fertiliser);
+
+      console.group(
+        `%c 🌾 2. TRẠNG THÁI BẢN ĐỒ & TÀI NGUYÊN (Map Resources) - LUỒNG TRỒNG RUỘNG `,
+        "background: #e65100; color: #fff; font-weight: bold; padding: 3px 8px; border-radius: 3px;"
+      );
+      console.table([
+        {
+          "Khu vực": "🌱 Đất Ruộng (Crops)",
+          "Tổng số ô ruộng (Trên Map)": cropList.length,
+          "Ô Đất Trống (Cần Gieo)": emptyPlots.length,
+          "Đã Rắc Phân Chưa Trồng": fertilisedEmptyPlots.length,
+          "Đang Trồng": cropList.filter((p) => !p.isEmpty).length,
+        },
+      ]);
+      console.groupEnd();
+
+      // Kiểm tra sơ bộ số hạt giống trong kho
+      let inv = state?.inventory || S.userData?.inventory || {};
+
+      // ── 1. ƯU TIÊN 100% GAME BRIDGE: TỰ ĐỘNG GIEO TOÀN BỘ Ô TRỐNG (HẠT NGẮN NGÀY -> DÀI NGÀY) ──
+      if (typeof S.bulkPlantBridge === "function") {
+        console.log("%c[SFL Trồng Ruộng] 🌱 Kích hoạt Gieo Hạt Hàng Loạt qua Game Bridge (Ưu tiên ngắn ngày nhất)...", "color: #00bcd4; font-weight: bold;");
+        const resBulk = await S.bulkPlantBridge("AUTO", 5000);
+        if (resBulk && resBulk.ok && resBulk.count > 0) {
+          console.log(`%c[SFL Trồng Ruộng] 🎉 ĐÃ GIEO HẠT THÀNH CÔNG cho ${resBulk.count} ô ruộng qua Game Bridge!`, "color: #00e676; font-weight: bold; font-size: 14px;");
+          if (resBulk.planted && resBulk.planted.length > 0) {
+            console.table(resBulk.planted.map((p) => ({ "Hạt Giống": p.seed, "Số Lượng Đã Gieo": `+${p.count}` })));
+          }
+          return true;
+        }
+      }
+
+      // ── 2. FALLBACK DOM NẾU GAME BRIDGE CHƯA GIEO HOẶC CÒN Ô RUỘNG TRỐNG TRÊN MÀN HÌNH ──
+      console.log("[SFL Trồng Ruộng] 🔍 Quét các ô ruộng trống trên màn hình (Fallback DOM)...");
       const danhSachRuong = timDanhSachRuongTrongCanGieo();
-      if (danhSachRuong.length === 0) {
+      if (danhSachRuong.length === 0 && emptyPlots.length === 0) {
+        console.log("[SFL Trồng Ruộng] ℹ️ Không phát hiện ô ruộng đất trống nào cần gieo.");
         return false;
       }
 
-      // 3. Đọc hạt giống từ Game Bridge / S.gameState
-      let state = S.gameState;
-      if (!state && typeof S.requestBridgeState === "function") {
-        state = await S.requestBridgeState(1500);
-      }
-
-      const season = (state?.user?.season || S.gameSeason || "spring").toLowerCase();
+      const season = (state?.user?.season || state?.season?.season || S.gameState?.season?.season || S.gameSeason || "spring").toLowerCase();
       const seedsCuaMua = SEASONAL_CROP_PLOT_SEEDS[season] || SEASONAL_CROP_PLOT_SEEDS.spring;
-      const inv = state?.inventory || S.userData?.inventory || {};
+      inv = S.gameState?.inventory || state?.inventory || S.userData?.inventory || {};
 
-      // Tìm loại hạt giống mùa có số lượng > 0
-      let tenHatChon = null;
-      let soLuongHat = 0;
+      // ƯU TIÊN HẠT GIỐNG NGẮN NGÀY TRƯỚC RỒI ĐẾN DÀI NGÀY (CROP_GROWTH_SECONDS TĂNG DẦN)
+      const danhSachHatKhaDung = [];
       for (const seedName of seedsCuaMua) {
-        if ((inv[seedName] || 0) > 0) {
-          tenHatChon = seedName;
-          soLuongHat = inv[seedName];
-          break;
+        const sl = Number(inv[seedName] || 0);
+        if (sl > 0) {
+          danhSachHatKhaDung.push({
+            name: seedName,
+            amount: sl,
+            seconds: CROP_GROWTH_SECONDS[seedName] || 999999,
+          });
         }
       }
 
-      // Fallback bất kỳ hạt giống nào trong kho
+      // Sắp xếp hạt giống theo thời gian trồng ngắn ngày nhất đến dài ngày nhất
+      danhSachHatKhaDung.sort((a, b) => a.seconds - b.seconds);
+
+      let tenHatChon = danhSachHatKhaDung[0]?.name || null;
+      let soLuongHat = danhSachHatKhaDung[0]?.amount || 0;
+
+      // Fallback bất kỳ hạt giống nào trong kho (nếu không có hạt mùa vụ), cũng xếp ngắn ngày -> dài ngày
       if (!tenHatChon) {
+        const fallbackCandidates = [];
         for (const [k, v] of Object.entries(inv)) {
-          if (k.endsWith(" Seed") && v > 0) {
-            tenHatChon = k;
-            soLuongHat = v;
-            break;
+          const count = Number(v || 0);
+          if (k.endsWith(" Seed") && count > 0 && CROP_GROWTH_SECONDS[k] !== undefined) {
+            fallbackCandidates.push({ name: k, amount: count, seconds: CROP_GROWTH_SECONDS[k] });
           }
         }
+        fallbackCandidates.sort((a, b) => a.seconds - b.seconds);
+        tenHatChon = fallbackCandidates[0]?.name || null;
+        soLuongHat = fallbackCandidates[0]?.amount || 0;
       }
 
       if (!tenHatChon || soLuongHat <= 0) {
@@ -426,14 +612,13 @@
         return false;
       }
 
-      // 4. LẤY HẠT GIỐNG QUA GAME BRIDGE (KHÔNG CẦN MỞ KHO ĐỒ)
       let hatInfo = await chuanBiHatGiong(tenHatChon, soLuongHat);
       if (!hatInfo) {
         console.log(`%c[SFL Trồng Ruộng] ⚠️ Chưa cầm được hạt giống trên tay -> Hủy gieo hạt (tránh click khống).`, "color: #ff9800; font-weight: bold;");
         return false;
       }
 
-      console.log(`%c[SFL Trồng Ruộng] 🌾 Bắt đầu gieo hạt ${hatInfo.tenHat} cho ${danhSachRuong.length} ô ruộng trống...`, "color: #4caf50; font-weight: bold; font-size: 13px;");
+      console.log(`%c[SFL Trồng Ruộng] 🌾 Bắt đầu gieo hạt "${hatInfo.tenHat}" (Ngắn ngày nhất) cho ${danhSachRuong.length} ô ruộng trống...`, "color: #4caf50; font-weight: bold; font-size: 13px;");
 
       let soHatConLai = hatInfo.soLuong;
       let daTrong = 0;
@@ -456,25 +641,37 @@
         }
 
         if (soHatConLai <= 0) {
-          console.log(`[SFL Trồng Ruộng] 🔄 Hết loại hạt hiện tại, tìm tiếp loại hạt khác...`);
+          console.log(`[SFL Trồng Ruộng] 🔄 Hết loại hạt hiện tại, tìm tiếp loại hạt ngắn ngày kế tiếp...`);
           let tenHatTiep = null;
           let soLuongTiep = 0;
+
+          // Lọc các hạt giống khác còn trong kho và sắp xếp tiếp từ ngắn ngày đến dài ngày
+          const tiepCandidates = [];
           for (const sName of seedsCuaMua) {
-            if (sName !== hatInfo.tenHat && (inv[sName] || 0) > 0) {
-              tenHatTiep = sName;
-              soLuongTiep = inv[sName];
-              break;
+            if (sName !== hatInfo.tenHat && Number(inv[sName] || 0) > 0) {
+              tiepCandidates.push({ name: sName, amount: Number(inv[sName]), seconds: CROP_GROWTH_SECONDS[sName] || 999999 });
             }
           }
-          if (!tenHatTiep) {
+          tiepCandidates.sort((a, b) => a.seconds - b.seconds);
+
+          if (tiepCandidates.length > 0) {
+            tenHatTiep = tiepCandidates[0].name;
+            soLuongTiep = tiepCandidates[0].amount;
+          } else {
+            // Fallback hạt giống khác ngoài mùa
+            const fallbackTiep = [];
             for (const [k, v] of Object.entries(inv)) {
-              if (k.endsWith(" Seed") && k !== hatInfo.tenHat && v > 0) {
-                tenHatTiep = k;
-                soLuongTiep = v;
-                break;
+              if (k.endsWith(" Seed") && k !== hatInfo.tenHat && Number(v || 0) > 0 && CROP_GROWTH_SECONDS[k] !== undefined) {
+                fallbackTiep.push({ name: k, amount: Number(v), seconds: CROP_GROWTH_SECONDS[k] });
               }
             }
+            fallbackTiep.sort((a, b) => a.seconds - b.seconds);
+            if (fallbackTiep.length > 0) {
+              tenHatTiep = fallbackTiep[0].name;
+              soLuongTiep = fallbackTiep[0].amount;
+            }
           }
+
           if (!tenHatTiep) {
             console.log(`[SFL Trồng Ruộng] ℹ️ Đã hết toàn bộ hạt giống trong kho.`);
             break;

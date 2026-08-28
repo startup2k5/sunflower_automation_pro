@@ -121,7 +121,7 @@
       if (el.parentElement) kichHoatReactProps(el.parentElement);
     } catch (_e) {}
 
-    const placement = el.closest?.('[data-map-placement="true"]') || el;
+    const placement = el.closest?.('[data-map-placement]') || el;
     setTimeout(() => {
       try {
         if (typeof el.blur === "function") el.blur();
@@ -204,13 +204,18 @@
     if (!el || !xemPhanTuRanh(el)) return false;
     const src = (el.src || el.getAttribute?.("src") || "").toLowerCase();
     const alt = (el.alt || el.getAttribute?.("alt") || "").toLowerCase();
+
+    const pText = (el.parentElement?.textContent || el.closest?.("div, button, [role='button']")?.textContent || "").toLowerCase();
+    if (pText.includes("vip") || src.includes("vip")) return false;
+    if (el.closest?.('[class*="vip"], [id*="vip"], [data-name*="vip"]')) return false;
+
     // TUYỆT ĐỐI KHÔNG ĐƯỢC NHẬN NHẦM THÙNG COMPOST CLOSED HOẶC ĐỒ TRÊN ĐẢO!
     if (src.includes("compost") || src.includes("closed") || src.includes("building") || src.includes("island")) {
       return false;
     }
     const laAnhClose = src.includes("/ui/close") || src.includes("/icons/close") || src.includes("close.png") || src.includes("cancel.png") || alt === "close" || alt === "cancel";
     const laAriaClose = el.getAttribute?.("aria-label") === "close";
-    const trongDialog = !!el.closest?.('[role="dialog"], [role="modal"], div[class*="modal"], div[style*="dark_border"], .scrollable');
+    const trongDialog = !!el.closest?.('[role="dialog"], [role="modal"], div[class*="modal"], .fixed.inset-0');
     return (laAnhClose || laAriaClose) && trongDialog;
   }
 
@@ -221,7 +226,7 @@
       const cacBtnClose = doc.querySelectorAll('img[src*="/ui/close"], img[src*="close.png"], img[src*="cancel.png"], button[aria-label="close"]');
       for (const img of cacBtnClose) {
         if (!laNutCloseChuan(img)) continue;
-        const btn = img.closest("button, [role='button'], div.cursor-pointer") || img;
+        const btn = img.closest("button, [role='button']") || img;
         clickTam(btn);
         await ngu(250);
         break;
@@ -314,7 +319,21 @@
         }
       }
 
-      const slot = timSlotSproutMix(doc);
+      let slot = timSlotSproutMix(doc);
+      if (!slot) {
+        // Thử click sub-tab "Fertiliser"
+        const subTabs = doc.querySelectorAll(".flex.items-center.cursor-pointer, button, [role='tab']");
+        for (const st of subTabs) {
+          const stTxt = (st.textContent || "").trim();
+          if (stTxt.includes("Fertiliser") || stTxt.includes("Fertilizer") || !!st.querySelector('img[src*="sprout_mix"], img[src*="fertiliser"]')) {
+            clickTam(st);
+            await ngu(300);
+            break;
+          }
+        }
+        slot = timSlotSproutMix(doc);
+      }
+
       if (slot) {
         console.log(`%c[SFL Bón Phân] 🧪 Đã click chọn ${tenPhan} trong giỏ đồ!`, "color: #4caf50; font-weight: bold;");
         clickTam(slot);
@@ -336,7 +355,7 @@
 
     for (const doc of taiLieu) {
       if (!doc || !doc.body) continue;
-      const cacO = doc.querySelectorAll('[data-map-placement="true"]');
+      const cacO = doc.querySelectorAll('[data-map-placement]');
       for (const el of cacO) {
         if (daThem.has(el) || !xemPhanTuRanh(el)) continue;
 
@@ -370,6 +389,27 @@
   async function tickFertilise() {
     if (dangBan) return false;
 
+    // 0. KIỂM TRA SỐ LƯỢNG PHÂN BÓN TRƯỚC TIÊN (CHỈ CHẠY KHI SỐ LƯỢNG > 0)
+    let state = null;
+    if (typeof S.requestBridgeState === "function") {
+      try {
+        state = await S.requestBridgeState(800);
+      } catch (_e) {}
+    }
+    if (!state) state = S.gameState;
+    const inv = state?.inventory || S.userData?.inventory || {};
+
+    const sproutMixCount = Number(inv["Sprout Mix"] || 0);
+    const rapidRootCount = Number(inv["Rapid Root"] || 0);
+    const sproutSurpriseCount = Number(inv["Sproutroot Surprise"] || 0);
+    const fertiliserCount = Number(inv["Fertiliser"] || 0);
+    const totalPhan = sproutMixCount + rapidRootCount + sproutSurpriseCount + fertiliserCount;
+
+    if (totalPhan <= 0) {
+      // Số lượng phân <= 0 -> Thoát ngay lập tức, không xin khóa, không quét DOM, tránh hành động thừa
+      return false;
+    }
+
     // 1. Khóa độc quyền toàn cục
     if (typeof S.xinKhoa === "function" && !S.xinKhoa("fertilise")) {
       return false;
@@ -378,25 +418,6 @@
 
     try {
       if (typeof S.isFlowBlocked === "function" && S.isFlowBlocked("fertilise")) {
-        return false;
-      }
-
-      // 2. KIỂM TRA SỐ LƯỢNG PHÂN BÓN TỪ LOAD_DATA / GAME STATE TRƯỚC TIÊN
-      let state = S.gameState;
-      if (typeof S.requestBridgeState === "function") {
-        try {
-          state = await S.requestBridgeState(1200);
-        } catch (_e) {}
-      }
-
-      const inv = state?.inventory || S.userData?.inventory || {};
-      const sproutMixCount = Number(inv["Sprout Mix"] || 0);
-      const rapidRootCount = Number(inv["Rapid Root"] || 0);
-      const sproutSurpriseCount = Number(inv["Sproutroot Surprise"] || 0);
-      const fertiliserCount = Number(inv["Fertiliser"] || 0);
-      const totalPhan = sproutMixCount + rapidRootCount + sproutSurpriseCount + fertiliserCount;
-
-      if (totalPhan <= 0) {
         return false;
       }
 

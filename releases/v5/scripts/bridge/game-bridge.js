@@ -164,6 +164,70 @@
   }
   S.batchBuyToolsBridge = batchBuyToolsBridge;
 
+  // Mua toàn bộ hạt giống trong mùa (Batch Buy Seeds) qua Game Bridge
+  function batchBuySeedsBridge(season = null, timeoutMs = 4000) {
+    return new Promise((resolve) => {
+      const reqId = "bbs_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+      let timer = null;
+
+      function onMsg(ev) {
+        if (ev.source !== window || !ev.data || ev.data._sfl !== true) return;
+        if (ev.data.type === "SFL_BATCH_BUY_SEEDS_RESULT" && ev.data.reqId === reqId) {
+          clearTimeout(timer);
+          window.removeEventListener("message", onMsg);
+          resolve(ev.data);
+        }
+      }
+
+      timer = setTimeout(() => {
+        window.removeEventListener("message", onMsg);
+        resolve({ ok: false, error: "timeout" });
+      }, timeoutMs);
+
+      window.addEventListener("message", onMsg);
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_BATCH_BUY_SEEDS",
+        reqId: reqId,
+        season: season,
+      }, "*");
+    });
+  }
+  S.batchBuySeedsBridge = batchBuySeedsBridge;
+  S.buySeasonalSeedsBridge = batchBuySeedsBridge;
+
+  // Mua đơn lẻ hạt giống chỉ định qua Game Bridge
+  function buySingleSeedBridge(seedName, amount = 1, timeoutMs = 2500) {
+    return new Promise((resolve) => {
+      const reqId = "bss_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+      let timer = null;
+
+      function onMsg(ev) {
+        if (ev.source !== window || !ev.data || ev.data._sfl !== true) return;
+        if (ev.data.type === "SFL_BUY_SINGLE_SEED_RESULT" && ev.data.reqId === reqId) {
+          clearTimeout(timer);
+          window.removeEventListener("message", onMsg);
+          resolve(ev.data);
+        }
+      }
+
+      timer = setTimeout(() => {
+        window.removeEventListener("message", onMsg);
+        resolve({ ok: false, error: "timeout" });
+      }, timeoutMs);
+
+      window.addEventListener("message", onMsg);
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_BUY_SINGLE_SEED",
+        reqId: reqId,
+        seedName: seedName,
+        amount: amount,
+      }, "*");
+    });
+  }
+  S.buySingleSeedBridge = buySingleSeedBridge;
+
   // Nhận thưởng Rương Daily Reward qua Game Bridge
   function claimDailyRewardBridge(timeoutMs = 3000) {
     return new Promise((resolve) => {
@@ -317,7 +381,64 @@
       }, "*");
     });
   }
-  S.bulkFertiliseBridge = bulkFertiliseBridge;
+  // Gieo hạt giống hàng loạt (Bulk Plant) cho toàn bộ ô ruộng rỗng qua Game Bridge
+  function bulkPlantBridge(seedName, timeoutMs = 3000) {
+    return new Promise((resolve) => {
+      const reqId = "bpl_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+      let timer = null;
+
+      function onMsg(ev) {
+        if (ev.source !== window || !ev.data || ev.data._sfl !== true) return;
+        if (ev.data.type === "SFL_BULK_PLANT_RESULT" && ev.data.reqId === reqId) {
+          clearTimeout(timer);
+          window.removeEventListener("message", onMsg);
+          resolve(ev.data);
+        }
+      }
+
+      timer = setTimeout(() => {
+        window.removeEventListener("message", onMsg);
+        resolve({ ok: false, error: "timeout" });
+      }, timeoutMs);
+
+      window.addEventListener("message", onMsg);
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_BULK_PLANT",
+        reqId: reqId,
+        seedName: seedName,
+      }, "*");
+    });
+  }
+  // Thu hoạch mật ong khi hũ mật đã đầy 100% qua Game Bridge
+  function harvestHoneyBridge(timeoutMs = 3500) {
+    return new Promise((resolve) => {
+      const reqId = "hnh_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+      let timer = null;
+
+      function onMsg(ev) {
+        if (ev.source !== window || !ev.data || ev.data._sfl !== true) return;
+        if (ev.data.type === "SFL_HARVEST_HONEY_RESULT" && ev.data.reqId === reqId) {
+          clearTimeout(timer);
+          window.removeEventListener("message", onMsg);
+          resolve(ev.data);
+        }
+      }
+
+      timer = setTimeout(() => {
+        window.removeEventListener("message", onMsg);
+        resolve({ ok: false, error: "timeout" });
+      }, timeoutMs);
+
+      window.addEventListener("message", onMsg);
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_HARVEST_HONEY",
+        reqId: reqId,
+      }, "*");
+    });
+  }
+  S.harvestHoneyBridge = harvestHoneyBridge;
 
   // Thu hoạch cây ăn quả chín (Fruit Harvested) qua Game Bridge
   function harvestFruitBridge(patchIds = null, timeoutMs = 2500) {
@@ -350,10 +471,10 @@
   }
   S.harvestFruitBridge = harvestFruitBridge;
 
-  // Đốn hạ cây ăn quả đã chết (Dead Fruit Tree Removed) qua Game Bridge
+  // Đốn hạ gốc cây ăn quả chết (Dead Fruit Tree Removed) qua Game Bridge
   function removeDeadFruitTreeBridge(patchIds = null, timeoutMs = 2500) {
     return new Promise((resolve) => {
-      const reqId = "rft_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+      const reqId = "rdft_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
       let timer = null;
 
       function onMsg(ev) {
@@ -380,6 +501,100 @@
     });
   }
   S.removeDeadFruitTreeBridge = removeDeadFruitTreeBridge;
+
+  // Gieo trồng cây ăn quả (Fruit Planted) qua Game Bridge
+  function plantFruitBridge(seedName = null, patchIds = null, timeoutMs = 2500) {
+    return new Promise((resolve) => {
+      const reqId = "pft_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+      let timer = null;
+
+      function onMsg(ev) {
+        if (ev.source !== window || !ev.data || ev.data._sfl !== true) return;
+        if (ev.data.type === "SFL_PLANT_FRUIT_RESULT" && ev.data.reqId === reqId) {
+          clearTimeout(timer);
+          window.removeEventListener("message", onMsg);
+          resolve(ev.data);
+        }
+      }
+
+      timer = setTimeout(() => {
+        window.removeEventListener("message", onMsg);
+        resolve({ ok: false, error: "timeout" });
+      }, timeoutMs);
+
+      window.addEventListener("message", onMsg);
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_PLANT_FRUIT",
+        reqId: reqId,
+        seedName: seedName,
+        patchIds: patchIds,
+      }, "*");
+    });
+  }
+  S.plantFruitBridge = plantFruitBridge;
+
+  // Thu hoạch hoa chín (Harvest Flowers) qua Game Bridge
+  function harvestFlowersBridge(bedIds = null, timeoutMs = 2500) {
+    return new Promise((resolve) => {
+      const reqId = "hfl_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+      let timer = null;
+
+      function onMsg(ev) {
+        if (ev.source !== window || !ev.data || ev.data._sfl !== true) return;
+        if (ev.data.type === "SFL_HARVEST_FLOWERS_RESULT" && ev.data.reqId === reqId) {
+          clearTimeout(timer);
+          window.removeEventListener("message", onMsg);
+          resolve(ev.data);
+        }
+      }
+
+      timer = setTimeout(() => {
+        window.removeEventListener("message", onMsg);
+        resolve({ ok: false, error: "timeout" });
+      }, timeoutMs);
+
+      window.addEventListener("message", onMsg);
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_HARVEST_FLOWERS",
+        reqId: reqId,
+        bedIds: bedIds,
+      }, "*");
+    });
+  }
+  S.harvestFlowersBridge = harvestFlowersBridge;
+
+  // Gieo trồng hoa & thụ phấn (Plant Flowers & Crossbreed) qua Game Bridge
+  function plantFlowersBridge(bedIds = null, timeoutMs = 2500) {
+    return new Promise((resolve) => {
+      const reqId = "pfl_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+      let timer = null;
+
+      function onMsg(ev) {
+        if (ev.source !== window || !ev.data || ev.data._sfl !== true) return;
+        if (ev.data.type === "SFL_PLANT_FLOWERS_RESULT" && ev.data.reqId === reqId) {
+          clearTimeout(timer);
+          window.removeEventListener("message", onMsg);
+          resolve(ev.data);
+        }
+      }
+
+      timer = setTimeout(() => {
+        window.removeEventListener("message", onMsg);
+        resolve({ ok: false, error: "timeout" });
+      }, timeoutMs);
+
+      window.addEventListener("message", onMsg);
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_PLANT_FLOWERS",
+        reqId: reqId,
+        bedIds: bedIds,
+      }, "*");
+    });
+  }
+  S.plantFlowersBridge = plantFlowersBridge;
 
   // Thu hoạch tất cả món ăn đã nấu chín qua Game Bridge
   function collectRecipesBridge(timeoutMs = 2500) {
@@ -472,6 +687,36 @@
     });
   }
   S.plantFruitBridge = plantFruitBridge;
+
+  // Mua toàn bộ hạt giống theo mùa (Crops + Fruits + Flowers + Greenhouse) qua Game Bridge, ưu tiên từ rẻ đến đắt
+  function buySeasonalSeedsBridge(timeoutMs = 5000) {
+    return new Promise((resolve) => {
+      const reqId = "bss_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+      let timer = null;
+
+      function onMsg(ev) {
+        if (ev.source !== window || !ev.data || ev.data._sfl !== true) return;
+        if (ev.data.type === "SFL_BUY_SEASONAL_SEEDS_RESULT" && ev.data.reqId === reqId) {
+          clearTimeout(timer);
+          window.removeEventListener("message", onMsg);
+          resolve(ev.data);
+        }
+      }
+
+      timer = setTimeout(() => {
+        window.removeEventListener("message", onMsg);
+        resolve({ ok: false, error: "timeout" });
+      }, timeoutMs);
+
+      window.addEventListener("message", onMsg);
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_BUY_SEASONAL_SEEDS",
+        reqId: reqId,
+      }, "*");
+    });
+  }
+  S.buySeasonalSeedsBridge = buySeasonalSeedsBridge;
 
   // Lắng nghe message từ page-bridge.js
   let daBaoBridgeReady = false;

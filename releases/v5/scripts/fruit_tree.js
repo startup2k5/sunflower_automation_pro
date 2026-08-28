@@ -1,6 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════
-// LUỒNG THU HOẠCH & ĐỐN CÂY ĂN QUẢ (fruit_tree.js)
-// Dựa vào Game Bridge để kiểm tra quả chín & đốn cây chết khi hết lượt hái
+// LUỒNG CHĂM SÓC CÂY ĂN QUẢ (fruit_tree.js)
+// Thu hoạch quả chín, đốn gốc cây chết và gieo trồng cây ăn quả mới
+// CHỈ XỬ LÝ CÁC Ô ĐÃ ĐẶT TRÊN MAP (BỎ QUA Ô ĐẤT TRONG KHO ĐỒ / RƯƠNG)
 // ═══════════════════════════════════════════════════════════════════
 (function (S) {
   "use strict";
@@ -36,7 +37,10 @@
   function xemPhanTuRanh(el) {
     if (!el) return false;
     const rect = el.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return false;
+    const hasSize = rect.width > 0 && rect.height > 0;
+    const hasChildSize = el.firstElementChild ? el.firstElementChild.getBoundingClientRect().width > 0 : false;
+    const hasImgSize = el.querySelector("img") ? el.querySelector("img").getBoundingClientRect().width > 0 : false;
+    if (!hasSize && !hasChildSize && !hasImgSize && el.offsetWidth <= 0 && el.offsetHeight <= 0) return false;
     const view = el.ownerDocument?.defaultView || window;
     let style;
     try { style = view.getComputedStyle(el); } catch (_e) { return false; }
@@ -46,8 +50,8 @@
   function kichHoatReactProps(el) {
     if (!el) return;
     for (const k in el) {
-      if (k.startsWith("__reactProps$") || k.startsWith("__reactEventHandlers$")) {
-        const p = el[k];
+      if (k.startsWith("__reactProps$") || k.startsWith("__reactEventHandlers$") || k.startsWith("__reactFiber$")) {
+        const p = el[k]?.memoizedProps || el[k];
         if (p) {
           if (typeof p.onPointerDown === "function") {
             try { p.onPointerDown({ stopPropagation: () => {}, preventDefault: () => {}, target: el, currentTarget: el, button: 0 }); } catch (_e) {}
@@ -65,9 +69,8 @@
     const view = el.ownerDocument?.defaultView || window;
     try { if (view && typeof view.focus === "function") view.focus(); } catch (_e) {}
     const rect = el.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return false;
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
+    const cx = rect.left + (rect.width > 0 ? rect.width / 2 : 16);
+    const cy = rect.top + (rect.height > 0 ? rect.height / 2 : 16);
 
     const baseOpts = {
       bubbles: true,
@@ -76,8 +79,6 @@
       view: view,
       clientX: cx,
       clientY: cy,
-      screenX: cx,
-      screenY: cy,
       pageX: cx + (view.scrollX || 0),
       pageY: cy + (view.scrollY || 0),
       which: 1,
@@ -89,50 +90,55 @@
     try { el.focus?.({ preventScroll: true }); } catch (_e) {}
 
     try {
-      if (typeof PointerEvent !== "undefined") {
-        el.dispatchEvent(new PointerEvent("pointerover", { ...baseOpts, pointerId: 1, pointerType: "mouse" }));
-        el.dispatchEvent(new PointerEvent("pointerenter", { ...baseOpts, pointerId: 1, pointerType: "mouse" }));
-        el.dispatchEvent(new PointerEvent("pointerdown", { ...downOpts, pointerId: 1, pointerType: "mouse", isPrimary: true, pressure: 0.5 }));
-      }
+      try { el.dispatchEvent(new PointerEvent("pointerdown", downOpts)); } catch (_p1) {}
+      el.dispatchEvent(new MouseEvent("mousedown", downOpts));
+      try { el.dispatchEvent(new PointerEvent("pointerup", upOpts)); } catch (_p2) {}
+      el.dispatchEvent(new MouseEvent("mouseup", upOpts));
+      el.dispatchEvent(new MouseEvent("click", baseOpts));
+      try { el.click?.(); } catch (_e2) {}
+      kichHoatReactProps(el);
+      if (el.parentElement) kichHoatReactProps(el.parentElement);
+      if (el.firstElementChild) kichHoatReactProps(el.firstElementChild);
     } catch (_e2) {}
-    el.dispatchEvent(new MouseEvent("mouseover", baseOpts));
-    el.dispatchEvent(new MouseEvent("mouseenter", baseOpts));
-    el.dispatchEvent(new MouseEvent("mousedown", downOpts));
 
-    try {
-      if (typeof PointerEvent !== "undefined") {
-        el.dispatchEvent(new PointerEvent("pointerup", { ...upOpts, pointerId: 1, pointerType: "mouse", isPrimary: true, pressure: 0 }));
-      }
-    } catch (_e3) {}
-    el.dispatchEvent(new MouseEvent("mouseup", upOpts));
-    el.dispatchEvent(new MouseEvent("click", upOpts));
-
-    try { el.click?.(); } catch (_e4) {}
-    kichHoatReactProps(el);
-    if (el.parentElement) kichHoatReactProps(el.parentElement);
+    const placement = el.closest?.('[data-map-placement]') || el;
+    if (placement && placement !== el) {
+      try {
+        try { placement.dispatchEvent(new PointerEvent("pointerdown", downOpts)); } catch (_p3) {}
+        placement.dispatchEvent(new MouseEvent("click", baseOpts));
+        kichHoatReactProps(placement);
+      } catch (_e3) {}
+    }
 
     setTimeout(() => {
       try {
         if (typeof el.blur === "function") el.blur();
         el.dispatchEvent(new MouseEvent("mouseout", upOpts));
         el.dispatchEvent(new MouseEvent("mouseleave", upOpts));
-      } catch (_e5) {}
+        if (placement && placement !== el) {
+          if (typeof placement.blur === "function") placement.blur();
+          placement.dispatchEvent(new MouseEvent("mouseout", upOpts));
+          placement.dispatchEvent(new MouseEvent("mouseleave", upOpts));
+        }
+      } catch (_e6) {}
     }, 40);
 
     return true;
   }
 
+  // Quét DOM tìm các ô cây ăn quả CHÍN HOẶC CHẾT trên bản đồ
   function timCayAnQuaDOM() {
     const taiLieu = layTaiLieuGame();
     const danhSach = [];
     for (const doc of taiLieu) {
       if (!doc || !doc.body) continue;
+      // Chỉ chọn quả đã chín sẵn sàng hái (replenished) hoặc cây chết cần đốn (dead_tree)
       const cacAnhFruit = doc.querySelectorAll(
-        "img[src*='fruit/'], img[src*='apple'], img[src*='orange'], img[src*='blueberry'], img[src*='banana'], img[src*='lemon'], img[src*='tomato'], img[src*='dead_tree'], img[src*='dead'], img[src*='bushShrub'], img[src*='shrub'], img[src*='replenished']"
+        "img[src*='replenished'], img[src*='dead_tree'], img[src*='dead']"
       );
       for (const img of cacAnhFruit) {
         if (!xemPhanTuRanh(img)) continue;
-        const clickable = img.closest('.cursor-pointer, [class*="cursor-pointer"], [data-map-placement="true"]') || img;
+        const clickable = img.closest('.cursor-pointer, [class*="cursor-pointer"], [data-map-placement]') || img;
         if (!danhSach.includes(clickable)) danhSach.push(clickable);
       }
     }
@@ -156,13 +162,15 @@
       let state = S.gameState;
       if (typeof S.requestBridgeState === "function") {
         try {
-          state = await S.requestBridgeState(1200);
+          state = await S.requestBridgeState(1500);
         } catch (_e) {}
       }
 
-      // 2. ƯU TIÊN GAME BRIDGE (SIÊU TỐC & CHÍNH XÁC 100%)
-      const fruitList = state?.resources?.fruitPatches?.list;
-      if (Array.isArray(fruitList) && fruitList.length > 0) {
+      // 2. CHỈ LẤY CÁC Ô ĐẤT CÂY ĂN QUẢ ĐÃ ĐẶT TRÊN MAP (TỌA ĐỘ HỢP LỆ, KHÔNG BỊ RÚT VỀ RƯƠNG)
+      const rawList = state?.resources?.fruitPatches?.list || [];
+      const fruitList = rawList.filter((f) => f && f.x !== undefined && f.y !== undefined);
+
+      if (fruitList.length > 0) {
         let daLamBridge = false;
 
         // A. Thu hoạch quả chín (isReady)
@@ -217,11 +225,11 @@
           }
         }
 
-        // C. Tự động gieo trồng cây ăn quả vào các ô đất trống (isEmpty)
+        // C. Tự động gieo trồng cây ăn quả vào các ô đất trống THỰC TẾ TRÊN MAP (isEmpty)
         const emptyPatches = fruitList.filter((f) => f.isEmpty || f.name === "Empty" || !f.plantedAt);
         if (emptyPatches.length > 0) {
           if (typeof S.plantFruitBridge === "function") {
-            console.log(`%c[SFL Cây Ăn Quả] 🌱 Tìm thấy ${emptyPatches.length} ô đất cây ăn quả trống! Tiến hành gieo trồng qua Game Bridge...`, "color: #00bcd4; font-weight: bold;");
+            console.log(`%c[SFL Cây Ăn Quả] 🌱 Tìm thấy ${emptyPatches.length} ô đất cây ăn quả trống trên đảo! Tiến hành gieo trồng qua Game Bridge...`, "color: #00bcd4; font-weight: bold;");
             const resP = await S.plantFruitBridge(null, emptyPatches.map((p) => p.id), 2500);
             if (resP && resP.ok && resP.plantedCount > 0) {
               const details = (resP.plantedDetails || []).map((d) => d.seed).join(", ");
@@ -240,7 +248,7 @@
         if (readyPatches.length === 0 && deadPatches.length === 0 && emptyPatches.length === 0) return false;
       }
 
-      // 3. FALLBACK DOM NẾU BRIDGE CHƯA KẾT NỐI
+      // 3. FALLBACK DOM NẾU CÓ CÂY CHÍN HOẶC CÂY CHẾT TRÊN MÀN HÌNH
       const trees = timCayAnQuaDOM();
       if (trees.length === 0) return false;
 

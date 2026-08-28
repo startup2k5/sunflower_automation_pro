@@ -13,13 +13,33 @@
   // Kiểm tra xem luồng có đang bị chặn bởi Captcha hoặc Goblin Swarm hay không
   function isFlowBlocked(tenLuong) {
     if (tenLuong === "captcha") return false;
-    if (S.__captchaActive) return true;
+    const captchaOpen = typeof S.isCaptchaOpen === "function" ? S.isCaptchaOpen() : false;
+    if (captchaOpen) return true;
+    if (!captchaOpen) {
+      S.__captchaActive = false;
+      S.__captchaInterrupted = false;
+      if (luongDangGiu === "captcha") {
+        luongDangGiu = null;
+        S.luongDangGiu = null;
+      }
+    }
     if (typeof S.isGoblinSwarm === "function" && S.isGoblinSwarm()) return true;
     return false;
   }
 
   function xinKhoa(tenLuong) {
     const bayGio = Date.now();
+    const captchaOpen = typeof S.isCaptchaOpen === "function" ? S.isCaptchaOpen() : false;
+
+    // Nếu Captcha đã đóng thì tự động dọn sạch cờ Captcha còn sót lại
+    if (!captchaOpen) {
+      S.__captchaActive = false;
+      S.__captchaInterrupted = false;
+      if (luongDangGiu === "captcha") {
+        luongDangGiu = null;
+        S.luongDangGiu = null;
+      }
+    }
 
     // Nếu Captcha đang mở -> Chặn tuyệt đối 100% mọi luồng khác
     if (tenLuong !== "captcha" && isFlowBlocked(tenLuong)) {
@@ -57,10 +77,11 @@
   }
 
   function nhaKhoa(tenLuong) {
-    if (tenLuong === "captcha") {
+    if (tenLuong === "captcha" || !tenLuong || (typeof S.isCaptchaOpen === "function" && !S.isCaptchaOpen())) {
       S.__captchaActive = false;
+      S.__captchaInterrupted = false;
     }
-    if (!tenLuong || luongDangGiu === tenLuong || tenLuong === "force") {
+    if (!tenLuong || luongDangGiu === tenLuong || tenLuong === "force" || tenLuong === "captcha") {
       luongDangGiu = null;
       thoiDiemGiuKhoa = 0;
       S.luongDangGiu = null;

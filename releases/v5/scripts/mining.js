@@ -158,7 +158,7 @@
 
     for (const doc of taiLieu) {
       if (!doc || !doc.body) continue;
-      const cacO = doc.querySelectorAll('[data-map-placement="true"]');
+      const cacO = doc.querySelectorAll('[data-map-placement]');
       for (const el of cacO) {
         if (daThem.has(el) || !xemPhanTuRanh(el)) continue;
         const cacAnh = Array.from(el.querySelectorAll("img"));

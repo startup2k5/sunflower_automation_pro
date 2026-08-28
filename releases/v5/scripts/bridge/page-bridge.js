@@ -49,15 +49,24 @@
 
   function extractService(input) {
     if (!input || typeof input !== "object") return null;
+    if (typeof input.shortcutItem === "function") {
+      cachedShortcutItem = input.shortcutItem;
+    }
     if (isGameService(input)) return input;
     try {
       for (const key of Object.keys(input)) {
         if (key.startsWith("__")) continue;
         const value = input[key];
+        if (value && typeof value === "object" && typeof value.shortcutItem === "function") {
+          cachedShortcutItem = value.shortcutItem;
+        }
         if (isGameService(value)) return value;
         if (!value || typeof value !== "object") continue;
         for (const sub of Object.keys(value)) {
           if (sub.startsWith("__")) continue;
+          if (value[sub] && typeof value[sub] === "object" && typeof value[sub].shortcutItem === "function") {
+            cachedShortcutItem = value[sub].shortcutItem;
+          }
           if (isGameService(value[sub])) return value[sub];
         }
       }
@@ -80,6 +89,10 @@
       if (!fiberKey) continue;
       let f = el[fiberKey];
       for (let depth = 0; depth < 50 && f; depth++) {
+        const val = f.memoizedProps?.value;
+        if (val && typeof val === "object" && typeof val.shortcutItem === "function") {
+          cachedShortcutItem = val.shortcutItem;
+        }
         const found = extractService(f.memoizedProps) || extractService(f.memoizedState);
         if (found) {
           cachedGameService = found;
@@ -137,20 +150,18 @@
       equipped: state.bumpkin?.equipped || {},
       achievements: state.bumpkin?.achievements || {},
       dailyRewards: (() => {
-        const todayUTC = new Date().toISOString().split("T")[0];
+        const todayUTC = new Date();
+        todayUTC.setUTCHours(0, 0, 0, 0);
+        const todayUTCMs = todayUTC.getTime();
+
         // Game lưu thời điểm nhận vào dailyRewards?.chest?.collectedAt
         const rawCollected =
           state.dailyRewards?.chest?.collectedAt ??
           state.dailyRewards?.collectedAt ??
           state.dailyRewards?.collectedDate;
         const collectedAt = toSafeNumber(rawCollected);
-        let isCollectedToday = false;
-        if (collectedAt > 0) {
-          try {
-            const colDate = new Date(collectedAt).toISOString().split("T")[0];
-            isCollectedToday = (colDate === todayUTC);
-          } catch (_e) {}
-        }
+        const isCollectedToday = collectedAt > todayUTCMs;
+
         return {
           streaks: toSafeNumber(state.dailyRewards?.streaks),
           collectedAt: collectedAt,
@@ -160,15 +171,13 @@
         };
       })(),
       shipments: (() => {
-        const todayUTC = new Date().toISOString().split("T")[0];
+        const todayUTC = new Date();
+        todayUTC.setUTCHours(0, 0, 0, 0);
+        const todayUTCMs = todayUTC.getTime();
+
         const restockedAt = toSafeNumber(state.shipments?.restockedAt);
-        let isRestockedToday = false;
-        if (restockedAt > 0) {
-          try {
-            const restockedDate = new Date(restockedAt).toISOString().split("T")[0];
-            isRestockedToday = (restockedDate === todayUTC);
-          } catch (_e) {}
-        }
+        const isRestockedToday = restockedAt > todayUTCMs;
+
         return {
           restockedAt: restockedAt,
           restockedAtText: restockedAt > 0 ? new Date(restockedAt).toLocaleTimeString("vi-VN") + " " + new Date(restockedAt).toLocaleDateString("vi-VN") : "Chưa có",
@@ -187,14 +196,15 @@
       }
     }
 
-    // 3. Tài nguyên bản đồ: Cây gỗ (Trees)
+    // 3. Cây gỗ (Trees) với tọa độ x, y
     const trees = [];
     if (state.trees && typeof state.trees === "object") {
       for (const [id, t] of Object.entries(state.trees)) {
+        if ((t?.x === undefined && t?.coordinates?.x === undefined) || t?.removedAt > 0) continue;
         const choppedAt = toSafeNumber(t?.wood?.choppedAt ?? t?.choppedAt);
         const recoveredAt = toSafeNumber(t?.wood?.recoveredAt ?? t?.recoveredAt);
         const isReady = choppedAt <= 0 || (recoveredAt > 0 && recoveredAt <= now);
-        trees.push({ id, x: toSafeNumber(t?.x), y: toSafeNumber(t?.y), isReady, choppedAt });
+        trees.push({ id, x: toSafeNumber(t?.x ?? t?.coordinates?.x), y: toSafeNumber(t?.y ?? t?.coordinates?.y), isReady, choppedAt });
       }
     }
 
@@ -203,6 +213,7 @@
       const list = [];
       if (!rockMap || typeof rockMap !== "object") return list;
       for (const [id, r] of Object.entries(rockMap)) {
+        if ((r?.x === undefined && r?.coordinates?.x === undefined) || r?.removedAt > 0) continue;
         const minedAt = toSafeNumber(r?.stone?.minedAt ?? r?.minedAt);
         const recoveredAt = toSafeNumber(r?.stone?.recoveredAt ?? r?.recoveredAt);
         const isReady = minedAt <= 0 || (recoveredAt > 0 && recoveredAt <= now);
@@ -214,6 +225,7 @@
     const oilList = [];
     if (state.oilReserves && typeof state.oilReserves === "object") {
       for (const [id, o] of Object.entries(state.oilReserves)) {
+        if ((o?.x === undefined && o?.coordinates?.x === undefined) || o?.removedAt > 0) continue;
         const drilledAt = toSafeNumber(o?.drilledAt);
         oilList.push({
           id,
@@ -243,10 +255,11 @@
 
     if (state.crops && typeof state.crops === "object") {
       for (const [id, plot] of Object.entries(state.crops)) {
+        if ((plot?.x === undefined && plot?.coordinates?.x === undefined) || plot?.removedAt > 0) continue;
         const plantedAt = toSafeNumber(plot?.crop?.plantedAt ?? plot?.plantedAt);
         const readyAt = toSafeNumber(plot?.crop?.readyAt ?? plot?.readyAt);
         const cropName = String(plot?.crop?.name || plot?.cropName || "").trim();
-        const isEmpty = !cropName && plantedAt <= 0;
+        const isEmpty = !cropName || plantedAt <= 0;
         const isReady = !isEmpty && readyAt > 0 && readyAt <= now;
 
         if (isEmpty) emptyCropsCount++;
@@ -284,6 +297,9 @@
     const fruitPatches = [];
     if (state.fruitPatches && typeof state.fruitPatches === "object") {
       for (const [id, patch] of Object.entries(state.fruitPatches)) {
+        // BỎ QUA Ô ĐẤT CẤT TRONG KHO / RÚT VỀ RƯƠNG (Không có tọa độ x, y trên đảo)
+        if ((patch?.x === undefined && patch?.coordinates?.x === undefined) || patch?.removedAt > 0) continue;
+
         const fruit = patch?.fruit;
         const fruitName = fruit?.name || "";
         const harvestsLeft = toSafeNumber(fruit?.harvestsLeft);
@@ -314,15 +330,35 @@
 
     // 7. Hoa & Mật ong (Flowers & Beehives) với tọa độ x, y
     const beehives = [];
+    const DEFAULT_HONEY_PRODUCTION_TIME = 24 * 60 * 60 * 1000; // 86,400,000 ms = 1 hũ mật đầy 100%
+
     if (state.beehives && typeof state.beehives === "object") {
       for (const [id, hive] of Object.entries(state.beehives)) {
-        const honey = toSafeNumber(hive?.honey?.produced);
+        if ((hive?.x === undefined && hive?.coordinates?.x === undefined) || hive?.removedAt > 0) continue;
+
+        const baseProduced = toSafeNumber(hive?.honey?.produced);
+        const updatedAt = toSafeNumber(hive?.honey?.updatedAt);
+        const attachedFlowers = (Array.isArray(hive?.flowers) ? hive.flowers : [])
+          .slice()
+          .sort((a, b) => (toSafeNumber(a.attachedAt) - toSafeNumber(b.attachedAt)));
+
+        const producedMs = attachedFlowers.reduce((produced, attachedFlower) => {
+          const start = Math.max(updatedAt, toSafeNumber(attachedFlower.attachedAt));
+          const end = Math.min(now, toSafeNumber(attachedFlower.attachedUntil));
+          const honey = Math.max(end - start, 0) * (toSafeNumber(attachedFlower.rate) || 1);
+          return produced + honey;
+        }, baseProduced);
+
+        const percentage = Math.min(100, Math.round((producedMs / DEFAULT_HONEY_PRODUCTION_TIME) * 10000) / 100);
+        const isReady = producedMs >= DEFAULT_HONEY_PRODUCTION_TIME;
+
         beehives.push({
-          id,
+          id: String(id),
           x: toSafeNumber(hive?.x ?? hive?.coordinates?.x),
           y: toSafeNumber(hive?.y ?? hive?.coordinates?.y),
-          honeyProduced: honey,
-          isReady: honey >= 24 || toSafeNumber(hive?.honey?.updatedAt) <= now - 24 * 60 * 1000,
+          honeyProducedMs: producedMs,
+          percentage: percentage,
+          isReady: isReady,
           swarm: !!hive?.swarm,
         });
       }
@@ -331,6 +367,8 @@
     const flowers = [];
     if (state.flowers && typeof state.flowers?.flowerBeds === "object") {
       for (const [id, bed] of Object.entries(state.flowers.flowerBeds)) {
+        if ((bed?.x === undefined && bed?.coordinates?.x === undefined) || bed?.removedAt > 0) continue;
+
         const flower = bed?.flower;
         flowers.push({
           id,
@@ -347,7 +385,8 @@
     const mushrooms = [];
     if (state.mushrooms?.mushrooms && typeof state.mushrooms.mushrooms === "object") {
       for (const [id, m] of Object.entries(state.mushrooms.mushrooms)) {
-        mushrooms.push({ id, name: m?.name || "Mushroom", x: toSafeNumber(m?.x), y: toSafeNumber(m?.y) });
+        if (m?.x === undefined && m?.coordinates?.x === undefined) continue;
+        mushrooms.push({ id, name: m?.name || "Mushroom", x: toSafeNumber(m?.x ?? m?.coordinates?.x), y: toSafeNumber(m?.y ?? m?.coordinates?.y) });
       }
     }
 
@@ -356,13 +395,15 @@
     if (state.buildings && typeof state.buildings === "object") {
       for (const [name, list] of Object.entries(state.buildings)) {
         const arr = Array.isArray(list) ? list : (typeof list === "object" ? Object.values(list) : [list]);
-        buildings[name] = arr.map((b) => ({
-          id: String(b?.id || ""),
-          x: toSafeNumber(b?.coordinates?.x ?? b?.x),
-          y: toSafeNumber(b?.coordinates?.y ?? b?.y),
-          readyAt: toSafeNumber(b?.readyAt),
-          createdAt: toSafeNumber(b?.createdAt),
-        }));
+        buildings[name] = arr
+          .filter((b) => (b?.coordinates?.x !== undefined || b?.x !== undefined) && (b?.coordinates?.y !== undefined || b?.y !== undefined))
+          .map((b) => ({
+            id: String(b?.id || ""),
+            x: toSafeNumber(b?.coordinates?.x ?? b?.x),
+            y: toSafeNumber(b?.coordinates?.y ?? b?.y),
+            readyAt: toSafeNumber(b?.readyAt),
+            createdAt: toSafeNumber(b?.createdAt),
+          }));
       }
     }
 
@@ -371,13 +412,15 @@
     if (state.collectibles && typeof state.collectibles === "object") {
       for (const [name, list] of Object.entries(state.collectibles)) {
         const arr = Array.isArray(list) ? list : (typeof list === "object" ? Object.values(list) : [list]);
-        collectibles[name] = arr.map((c) => ({
-          id: String(c?.id || ""),
-          x: toSafeNumber(c?.coordinates?.x ?? c?.x),
-          y: toSafeNumber(c?.coordinates?.y ?? c?.y),
-          readyAt: toSafeNumber(c?.readyAt),
-          createdAt: toSafeNumber(c?.createdAt),
-        }));
+        collectibles[name] = arr
+          .filter((c) => (c?.coordinates?.x !== undefined || c?.x !== undefined) && (c?.coordinates?.y !== undefined || c?.y !== undefined))
+          .map((c) => ({
+            id: String(c?.id || ""),
+            x: toSafeNumber(c?.coordinates?.x ?? c?.x),
+            y: toSafeNumber(c?.coordinates?.y ?? c?.y),
+            readyAt: toSafeNumber(c?.readyAt),
+            createdAt: toSafeNumber(c?.createdAt),
+          }));
       }
     }
 
@@ -489,7 +532,7 @@
     if (t === "goblin" || t.includes("moon") || t.includes("seeker") || t.includes("zomb") || t.includes("skele")) return true;
     if (typeof item.src === "string") {
       const s = item.src.toLowerCase();
-      if (s.includes("skeleton") || s.includes("goblin") || s.includes("moon_seeker") || s.includes("zombie")) return true;
+      if (s.includes("skeleton") || s.includes("goblin") || s.includes("moonseeker") || s.includes("moon_seeker") || s.includes("zombie")) return true;
     }
     return false;
   }
@@ -498,7 +541,7 @@
     if (!first || typeof first !== "object") return false;
     if (typeof first.isGoblin === "boolean" || typeof first.isMoonSeeker === "boolean" || typeof first.isZombie === "boolean" || typeof first.isSkeleton === "boolean") return true;
     if (typeof first.goblin === "boolean" || typeof first.moonSeeker === "boolean" || typeof first.skeleton === "boolean" || typeof first.zombie === "boolean") return true;
-    if (typeof first.src === "string" && (first.src.startsWith("data:image") || first.src.includes("crops") || first.src.includes("goblin") || first.src.includes("skeleton") || first.src.includes("npc"))) return true;
+    if (typeof first.src === "string" && (first.src.startsWith("data:image") || first.src.includes("crops") || first.src.includes("goblin") || first.src.includes("skeleton") || first.src.includes("npc") || first.src.includes("moonseeker"))) return true;
     return false;
   }
 
@@ -513,7 +556,7 @@
   function _findGrid16InFiber(f) {
     if (!f) return null;
     let hook = f.memoizedState;
-    for (let hi = 0; hi < 60 && hook; hi += 1) {
+    for (let hi = 0; hi < 80 && hook; hi += 1) {
       const st = hook.memoizedState;
       if (Array.isArray(st) && st.length === 16 && _isCaptchaGridItem(st[0])) {
         return _mapCaptchaGridItems(st);
@@ -535,69 +578,137 @@
   }
 
   function readCaptchaGridItems() {
-    const candidates = [];
-    try {
-      const dialogs = document.querySelectorAll('[role="dialog"]');
-      for (let i = 0; i < dialogs.length; i += 1) candidates.push(dialogs[i]);
-    } catch (_e) {}
+    // 1. Quét tất cả các container chứa grid 16 ô trên toàn bộ trang (kể cả trong Headless UI Modal Portal)
+    const allWraps = Array.from(
+      document.querySelectorAll("div.flex.flex-wrap.justify-center.items-center, div.flex.flex-wrap.justify-center, div.flex.flex-wrap")
+    );
 
-    try {
-      const wraps = document.querySelectorAll("div.flex.flex-wrap.justify-center.items-center, div.flex.flex-wrap");
-      for (let wi = 0; wi < wraps.length; wi += 1) {
-        let anc = wraps[wi].parentElement;
-        for (let up = 0; up < 12 && anc; up += 1) {
-          if (!candidates.includes(anc)) candidates.push(anc);
-          anc = anc.parentElement;
-        }
-      }
-    } catch (_e) {}
-
-    for (let ci = 0; ci < candidates.length; ci += 1) {
-      const dlg = candidates[ci];
-      if (!dlg) continue;
-
-      const wrap =
-        dlg.querySelector(".flex.flex-wrap.justify-center.items-center") ||
-        dlg.querySelector(".flex.flex-wrap.justify-center") ||
-        dlg.querySelector(".flex.flex-wrap");
+    for (let wi = 0; wi < allWraps.length; wi += 1) {
+      const wrap = allWraps[wi];
       if (!wrap) continue;
 
       const children = Array.from(wrap.children).filter(
-        (el) => el && el.tagName === "DIV" && el.classList?.contains("cursor-pointer"),
+        (el) => el && el.tagName === "DIV" && el.classList?.contains("cursor-pointer")
       );
-      if (children.length < 16) continue;
-      const cells = children.slice(0, 16);
+      if (children.length !== 16) continue;
+      const cells = children;
 
+      // ── CHIẾN LƯỢC 1: Quét trực tiếp React Props & Fiber của từng ô cell và thẻ <img> bên trong ──
+      const itemsDirect = [];
+      let directTargetCount = 0;
+
+      for (let i = 0; i < 16; i += 1) {
+        const cell = cells[i];
+        const img = cell.querySelector("img") || cell;
+
+        let rawSrc = "";
+        let isTarget = false;
+
+        // A. Thử đọc từ React Props (thường chứa nguyên bản JSX props trước khi bị addNoise đổi thành data:image)
+        const imgPropsKey = Object.keys(img).find((k) => k.startsWith("__reactProps") || k.startsWith("__reactEventHandlers"));
+        if (imgPropsKey && img[imgPropsKey] && typeof img[imgPropsKey].src === "string") {
+          rawSrc = img[imgPropsKey].src;
+        }
+
+        // B. Thử đọc từ React Fiber của thẻ <img>
+        if (!rawSrc) {
+          const imgFiberKey = Object.keys(img).find((k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance"));
+          if (imgFiberKey && img[imgFiberKey]) {
+            const ifib = img[imgFiberKey];
+            rawSrc = ifib.memoizedProps?.src || ifib.pendingProps?.src || "";
+          }
+        }
+
+        // C. Thử đọc từ React Props/Fiber của ô cell chứa <img>
+        if (!rawSrc) {
+          const cellFiberKey = Object.keys(cell).find((k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance"));
+          if (cellFiberKey && cell[cellFiberKey]) {
+            const cfib = cell[cellFiberKey];
+            const ch = cfib.memoizedProps?.children || cfib.pendingProps?.children;
+            if (ch && ch.props && typeof ch.props.src === "string") {
+              rawSrc = ch.props.src;
+            }
+          }
+        }
+
+        // D. Fallback nếu thẻ <img> trên DOM chưa bị addNoise đổi thành base64
+        if (!rawSrc || rawSrc.startsWith("data:")) {
+          const domSrc = img.getAttribute("src") || img.currentSrc || "";
+          if (domSrc && !domSrc.startsWith("data:")) {
+            rawSrc = domSrc;
+          }
+        }
+
+        const sLow = String(rawSrc).toLowerCase();
+        if (
+          sLow.includes("goblin") ||
+          sLow.includes("moonseeker") ||
+          sLow.includes("moon_seeker") ||
+          sLow.includes("skeleton") ||
+          sLow.includes("zombie")
+        ) {
+          isTarget = true;
+          directTargetCount += 1;
+        }
+
+        itemsDirect.push({
+          index: i,
+          isGoblin: isTarget,
+          src: sLow.slice(0, 120),
+        });
+      }
+
+      // Sunflower Land Captcha luôn có đúng 3 mục tiêu (GOBLIN_COUNT = 3)
+      if (directTargetCount >= 1 && directTargetCount <= 6) {
+        console.log(`%c[SFL Bridge] 🎯 Đọc thành công ${directTargetCount} mục tiêu từ React Props/Fiber trực tiếp của 16 ô!`, "color: #00e676; font-weight: bold;");
+        return itemsDirect;
+      }
+
+      // ── CHIẾN LƯỢC 2: Duyệt ngược cây React Fiber (f.return) để tìm State items của StopTheGoblins ──
       for (let ci2 = 0; ci2 < cells.length; ci2 += 1) {
         const cell = cells[ci2];
         const fiberKey = Object.keys(cell).find(
-          (k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance"),
+          (k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance")
         );
         if (!fiberKey) continue;
         let f = cell[fiberKey];
-        for (let depth = 0; depth < 80 && f; depth += 1) {
+        for (let depth = 0; depth < 100 && f; depth += 1) {
           const found = _findGrid16InFiber(f);
-          if (found) return found;
+          if (found) {
+            console.log("%c[SFL Bridge] 🎯 Tìm thấy 16 ô Captcha từ Hook State của StopTheGoblins!", "color: #00e676; font-weight: bold;");
+            return found;
+          }
           f = f.return;
         }
       }
+    }
 
+    // ── CHIẾN LƯỢC 3: Quét toàn bộ React Fiber từ tất cả các Dialog / Modal Portal ──
+    const dialogs = document.querySelectorAll('[role="dialog"], div.fixed.inset-0, #root');
+    for (let di = 0; di < dialogs.length; di += 1) {
+      const dlg = dialogs[di];
       const dlgFiberKey = Object.keys(dlg).find(
-        (k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance"),
+        (k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance")
       );
-      if (dlgFiberKey) {
-        const queue = [dlg[dlgFiberKey]];
-        let steps = 0;
-        const visited = new Set();
-        while (queue.length && steps < 15000) {
-          const f = queue.shift();
-          steps += 1;
-          if (!f || visited.has(f)) continue;
-          visited.add(f);
-          const found = _findGrid16InFiber(f);
-          if (found) return found;
-          let c = f.child;
-          while (c) { queue.push(c); c = c.sibling; }
+      if (!dlgFiberKey) continue;
+
+      const queue = [dlg[dlgFiberKey]];
+      let steps = 0;
+      const visited = new Set();
+      while (queue.length && steps < 15000) {
+        const f = queue.shift();
+        steps += 1;
+        if (!f || visited.has(f)) continue;
+        visited.add(f);
+        const found = _findGrid16InFiber(f);
+        if (found) {
+          console.log("%c[SFL Bridge] 🎯 Tìm thấy 16 ô Captcha qua BFS Portal Tree!", "color: #00e676; font-weight: bold;");
+          return found;
+        }
+        let c = f.child;
+        while (c) {
+          queue.push(c);
+          c = c.sibling;
         }
       }
     }
@@ -609,35 +720,38 @@
   let cachedShortcutItem = null;
   function findShortcutItemFn() {
     if (typeof cachedShortcutItem === "function") return cachedShortcutItem;
-    const rootEl = document.querySelector("#root") || document.body;
-    if (!rootEl) return null;
-    const fiberKey = Object.keys(rootEl).find(
-      (k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance")
-    );
-    if (!fiberKey) return null;
+    findGameService();
+    if (typeof cachedShortcutItem === "function") return cachedShortcutItem;
 
-    let queue = [rootEl[fiberKey]];
-    let steps = 0;
-    while (queue.length && steps < 8000) {
-      const cur = queue.shift();
-      steps++;
-      if (!cur) continue;
-
-      const val = cur.memoizedProps?.value;
-      if (val && typeof val === "object") {
-        if (typeof val.shortcutItem === "function") {
-          cachedShortcutItem = val.shortcutItem;
-          return cachedShortcutItem;
-        }
-        if (typeof val.setSelectedItem === "function") {
-          cachedShortcutItem = val.setSelectedItem;
-          return cachedShortcutItem;
-        }
+    // 2. Thử tìm trên Phaser Game Registry
+    try {
+      const phaserGame = window.Phaser?.GAMES?.[0] || document.querySelector("canvas")?.__phaserGame;
+      const fn = phaserGame?.registry?.get?.("shortcutItem");
+      if (typeof fn === "function") {
+        cachedShortcutItem = fn;
+        return cachedShortcutItem;
       }
+    } catch (_e) {}
 
-      if (cur.child) queue.push(cur.child);
-      if (cur.sibling) queue.push(cur.sibling);
+    // 3. Thử tìm từ các phần tử DOM trên trang bằng cách duyệt ngược f.return
+    const elements = document.querySelectorAll('[data-map-placement], [role="button"], button, .cursor-pointer, #root');
+    for (let i = 0; i < elements.length; i++) {
+      const el = elements[i];
+      const fiberKey = Object.keys(el).find((k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance"));
+      if (!fiberKey) continue;
+      let f = el[fiberKey];
+      for (let depth = 0; depth < 50 && f; depth++) {
+        const val = f.memoizedProps?.value || f.memoizedProps;
+        if (val && typeof val === "object") {
+          if (typeof val.shortcutItem === "function") {
+            cachedShortcutItem = val.shortcutItem;
+            return cachedShortcutItem;
+          }
+        }
+        f = f.return;
+      }
     }
+
     return null;
   }
 
@@ -647,20 +761,18 @@
     const baseCrop = itemName.toLowerCase().replace(/\s*seed\s*/i, "").trim();
     const imgs = document.querySelectorAll("img");
     for (const img of imgs) {
+      if (img.closest('[role="dialog"], .scrollable, .overflow-y-auto')) continue;
       const src = (img.src || img.getAttribute("src") || "").toLowerCase();
       const alt = (img.alt || img.getAttribute("alt") || "").toLowerCase();
-      const matchSeed =
+      const match =
         src.includes(slug) ||
         (src.includes(baseCrop) && src.includes("seed")) ||
         src.includes(`${baseCrop}_seed`) ||
-        (alt.includes(baseCrop) && alt.includes("seed"));
+        (alt.includes(baseCrop) && alt.includes("seed")) ||
+        (slug.includes("sprout") && (src.includes("sprout_mix") || src.includes("fertiliser"))) ||
+        (slug.includes("rapid") && src.includes("rapid_root"));
 
-      if (
-        matchSeed ||
-        (slug.includes("sprout") && src.includes("sprout_mix")) ||
-        (slug.includes("rapid") && src.includes("rapid_root"))
-      ) {
-        if (img.closest('[role="dialog"], .scrollable, .overflow-y-auto')) continue;
+      if (match) {
         const btn = img.closest("button, [role='button'], div.cursor-pointer, [class*='cursor-pointer']") || img;
         try {
           btn.click();
@@ -905,12 +1017,246 @@
       try { svc.send({ type: "SAVE" }); } catch (_e) {}
     }
 
+      return {
+        ok: true,
+        crafted: craftedList,
+        totalCoinsSpent: totalCoinsSpent,
+        remainingCoins: currentCoins,
+      };
+    }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // TÍNH NĂNG MUA HẠT GIỐNG QUA GAME SERVICE (XState Engine)
+  // Ưu tiên: Mua hết hạt trong mùa từ rẻ đến đắt (Crops, Fruits, Flowers, Greenhouse)
+  // ═══════════════════════════════════════════════════════════════════
+  const SEEDS_CATALOG = {
+    // Spring
+    "Sunflower Seed": { name: "Sunflower Seed", price: 0.01, level: 1, type: "crop" },
+    "Potato Seed": { name: "Potato Seed", price: 0.1, level: 1, type: "crop" },
+    "Rhubarb Seed": { name: "Rhubarb Seed", price: 0.15, level: 1, type: "crop" },
+    "Pumpkin Seed": { name: "Pumpkin Seed", price: 0.2, level: 2, type: "crop" },
+    "Zucchini Seed": { name: "Zucchini Seed", price: 0.2, level: 2, type: "crop" },
+    "Carrot Seed": { name: "Carrot Seed", price: 0.5, level: 2, type: "crop" },
+    "Yam Seed": { name: "Yam Seed", price: 0.5, level: 2, type: "crop" },
+    "Cabbage Seed": { name: "Cabbage Seed", price: 1, level: 3, type: "crop" },
+    "Broccoli Seed": { name: "Broccoli Seed", price: 1, level: 3, type: "crop" },
+    "Soybean Seed": { name: "Soybean Seed", price: 1.5, level: 4, type: "crop" },
+    "Beetroot Seed": { name: "Beetroot Seed", price: 2, level: 5, type: "crop" },
+    "Pepper Seed": { name: "Pepper Seed", price: 2, level: 5, type: "crop" },
+    "Cauliflower Seed": { name: "Cauliflower Seed", price: 3, level: 6, type: "crop" },
+    "Parsnip Seed": { name: "Parsnip Seed", price: 5, level: 7, type: "crop" },
+    "Wheat Seed": { name: "Wheat Seed", price: 5, level: 10, type: "crop" },
+    "Eggplant Seed": { name: "Eggplant Seed", price: 6, level: 8, type: "crop" },
+    "Turnip Seed": { name: "Turnip Seed", price: 6, level: 10, type: "crop" },
+    "Corn Seed": { name: "Corn Seed", price: 7, level: 9, type: "crop" },
+    "Radish Seed": { name: "Radish Seed", price: 7, level: 10, type: "crop" },
+    "Kale Seed": { name: "Kale Seed", price: 7, level: 11, type: "crop" },
+    "Onion Seed": { name: "Onion Seed", price: 7.5, level: 9, type: "crop" },
+    "Artichoke Seed": { name: "Artichoke Seed", price: 9, level: 11, type: "crop" },
+    "Barley Seed": { name: "Barley Seed", price: 9, level: 12, type: "crop" },
+
+    // Fruits
+    "Tomato Seed": { name: "Tomato Seed", price: 5, level: 13, type: "fruit" },
+    "Lemon Seed": { name: "Lemon Seed", price: 15, level: 12, type: "fruit" },
+    "Blueberry Seed": { name: "Blueberry Seed", price: 30, level: 14, type: "fruit" },
+    "Orange Seed": { name: "Orange Seed", price: 50, level: 15, type: "fruit" },
+    "Apple Seed": { name: "Apple Seed", price: 70, level: 16, type: "fruit" },
+    "Banana Plant": { name: "Banana Plant", price: 90, level: 16, type: "fruit" },
+
+    // Flowers
+    "Sunpetal Seed": { name: "Sunpetal Seed", price: 16, level: 13, type: "flower" },
+    "Bloom Seed": { name: "Bloom Seed", price: 32, level: 22, type: "flower" },
+    "Lily Seed": { name: "Lily Seed", price: 48, level: 27, type: "flower" },
+    "Edelweiss Seed": { name: "Edelweiss Seed", price: 48, level: 20, type: "flower" },
+    "Gladiolus Seed": { name: "Gladiolus Seed", price: 48, level: 20, type: "flower" },
+    "Lavender Seed": { name: "Lavender Seed", price: 48, level: 20, type: "flower" },
+    "Clover Seed": { name: "Clover Seed", price: 48, level: 20, type: "flower" },
+
+    // Greenhouse
+    "Rice Seed": { name: "Rice Seed", price: 240, level: 40, type: "greenhouse" },
+    "Olive Seed": { name: "Olive Seed", price: 320, level: 40, type: "greenhouse" },
+    "Grape Seed": { name: "Grape Seed", price: 380, level: 40, type: "greenhouse" },
+  };
+
+  const SEASON_SEEDS_MAP = {
+    spring: [
+      "Sunflower Seed", "Rhubarb Seed", "Carrot Seed", "Cabbage Seed", "Soybean Seed",
+      "Corn Seed", "Wheat Seed", "Kale Seed", "Barley Seed", "Tomato Seed",
+      "Blueberry Seed", "Orange Seed", "Sunpetal Seed", "Bloom Seed", "Lily Seed",
+      "Lavender Seed", "Rice Seed", "Olive Seed", "Grape Seed"
+    ],
+    summer: [
+      "Sunflower Seed", "Potato Seed", "Zucchini Seed", "Pepper Seed", "Beetroot Seed",
+      "Cauliflower Seed", "Eggplant Seed", "Radish Seed", "Wheat Seed", "Lemon Seed",
+      "Orange Seed", "Banana Plant", "Sunpetal Seed", "Bloom Seed", "Lily Seed",
+      "Gladiolus Seed", "Rice Seed", "Olive Seed", "Grape Seed"
+    ],
+    autumn: [
+      "Potato Seed", "Pumpkin Seed", "Carrot Seed", "Yam Seed", "Broccoli Seed",
+      "Soybean Seed", "Wheat Seed", "Barley Seed", "Artichoke Seed", "Tomato Seed",
+      "Apple Seed", "Banana Plant", "Sunpetal Seed", "Bloom Seed", "Lily Seed",
+      "Clover Seed", "Rice Seed", "Olive Seed", "Grape Seed"
+    ],
+    winter: [
+      "Potato Seed", "Cabbage Seed", "Beetroot Seed", "Cauliflower Seed", "Parsnip Seed",
+      "Onion Seed", "Turnip Seed", "Wheat Seed", "Kale Seed", "Lemon Seed",
+      "Blueberry Seed", "Apple Seed", "Sunpetal Seed", "Bloom Seed", "Lily Seed",
+      "Edelweiss Seed", "Rice Seed", "Olive Seed", "Grape Seed"
+    ],
+  };
+
+  function calculateSeedPrice(seedSpec, state) {
+    if (!seedSpec || !state) return seedSpec?.price || 1;
+    let price = seedSpec.price;
+
+    const inv = state.inventory || {};
+    const bumpkin = state.bumpkin || {};
+    const collectibles = state.collectibles || {};
+
+    if (collectibles["Kuebiko"]?.length > 0 || inv["Kuebiko"]) {
+      if (seedSpec.type === "crop") return 0;
+    }
+    if (seedSpec.type === "flower" && (collectibles["Hungry Caterpillar"]?.length > 0 || inv["Hungry Caterpillar"])) {
+      return 0;
+    }
+    if (seedSpec.name === "Sunflower Seed" && bumpkin.equipped?.secondary === "Sunflower Shield") {
+      return 0;
+    }
+    if (seedSpec.name === "Onion Seed" && bumpkin.equipped?.suit === "Ladybug Suit") {
+      price = price * 0.75;
+    }
+    if (inv["Artist"]?.gte ? inv["Artist"].gte(1) : Number(inv["Artist"] || 0) >= 1) {
+      price = price * 0.9;
+    }
+
+    return price;
+  }
+
+  function getMaxBuyableSeedAmount(seedSpec, state, currentCoins) {
+    const bumpkinLevel = state.bumpkin?.level || 1;
+    if (seedSpec.level && bumpkinLevel < seedSpec.level) {
+      return 0;
+    }
+
+    const unitPrice = calculateSeedPrice(seedSpec, state);
+
+    let stock = 400;
+    if (state.stock && state.stock[seedSpec.name] !== undefined) {
+      stock = toSafeNumber(state.stock[seedSpec.name]);
+    }
+    if (stock <= 0) return 0;
+
+    if (unitPrice <= 0) {
+      return stock;
+    }
+    const maxAffordable = Math.floor(currentCoins / unitPrice);
+    if (maxAffordable <= 0) return 0;
+
+    return Math.min(stock, maxAffordable);
+  }
+
+  function batchBuySeedsViaService(requestedSeason = null) {
+    const svc = findGameService();
+    if (!svc) return { ok: false, error: "no_service", message: "Game Service chưa sẵn sàng" };
+
+    const state = getGameState();
+    if (!state) return { ok: false, error: "no_state", message: "Không lấy được Game State" };
+
+    let currentCoins = toSafeNumber(state.coins);
+    if (currentCoins <= 0) {
+      return { ok: true, bought: [], totalCoinsSpent: 0, message: "Hết Coins trong túi" };
+    }
+
+    const currentSeason = (requestedSeason || state.season?.season || "spring").toLowerCase();
+    const seedsInSeason = SEASON_SEEDS_MAP[currentSeason] || SEASON_SEEDS_MAP.spring;
+
+    // Sắp xếp hạt giống trong mùa từ rẻ nhất đến đắt nhất
+    const candidates = seedsInSeason
+      .map((name) => SEEDS_CATALOG[name] || { name, price: 1, level: 1, type: "crop" })
+      .sort((a, b) => a.price - b.price);
+
+    const boughtList = [];
+    let totalCoinsSpent = 0;
+
+    for (const spec of candidates) {
+      if (currentCoins <= 0) break;
+
+      const qty = getMaxBuyableSeedAmount(spec, state, currentCoins);
+      if (qty <= 0) continue;
+
+      const unitPrice = calculateSeedPrice(spec, state);
+      const cost = unitPrice * qty;
+
+      try {
+        svc.send({
+          type: "seed.bought",
+          item: spec.name,
+          amount: qty,
+        });
+
+        currentCoins = Math.max(0, currentCoins - cost);
+        totalCoinsSpent += cost;
+
+        boughtList.push({
+          seed: spec.name,
+          amount: qty,
+          unitPrice: unitPrice,
+          totalCost: cost,
+          type: spec.type,
+        });
+
+        console.log(`%c[SFL Bridge] 🛒 Đã mua x${qty} "${spec.name}" (${spec.type}) - Hết ${cost} Coins`, "color: #00e676; font-weight: bold;");
+      } catch (err) {
+        console.warn(`[SFL Bridge] Bỏ qua mua ${spec.name} do lỗi:`, err?.message || err);
+      }
+    }
+
+    if (boughtList.length > 0) {
+      try { svc.send({ type: "SAVE" }); } catch (_e) {}
+    }
+
     return {
       ok: true,
-      crafted: craftedList,
+      bought: boughtList,
+      boughtList: boughtList,
       totalCoinsSpent: totalCoinsSpent,
       remainingCoins: currentCoins,
+      season: currentSeason,
     };
+  }
+
+  function buySingleSeedViaService(seedName, amount = 1) {
+    const svc = findGameService();
+    if (!svc) return { ok: false, error: "no_service" };
+    const state = getGameState();
+    if (!state) return { ok: false, error: "no_state" };
+
+    const spec = SEEDS_CATALOG[seedName] || { name: seedName, price: 1, level: 1, type: "crop" };
+    const currentCoins = toSafeNumber(state.coins);
+    const maxQty = getMaxBuyableSeedAmount(spec, state, currentCoins);
+    const targetAmount = Math.min(amount, maxQty > 0 ? maxQty : amount);
+
+    if (targetAmount <= 0) {
+      return { ok: false, error: "insufficient_funds_or_level", message: "Không đủ Coins hoặc chưa đạt cấp độ" };
+    }
+
+    try {
+      svc.send({
+        type: "seed.bought",
+        item: spec.name,
+        amount: targetAmount,
+      });
+      try { svc.send({ type: "SAVE" }); } catch (_e) {}
+      const unitPrice = calculateSeedPrice(spec, state);
+      return {
+        ok: true,
+        seed: spec.name,
+        amount: targetAmount,
+        cost: unitPrice * targetAmount,
+      };
+    } catch (err) {
+      return { ok: false, error: err?.message || String(err) };
+    }
   }
 
   // Lắng nghe yêu cầu từ Content Script
@@ -940,12 +1286,18 @@
         if (typeof fn === "function") {
           fn(itemName);
           ok = true;
+          console.log(`%c[SFL Bridge] ✔️ shortcutItem("${itemName}") thành công qua React Context!`, "color: #00e676; font-weight: bold;");
         }
-      } catch (_e) {}
+      } catch (e) {
+        console.warn("[SFL Bridge] shortcutItem lỗi:", e);
+      }
 
       // 2. Thử click trực tiếp trên Hotbar DOM
       if (!ok) {
         ok = selectItemFromHotbar(itemName);
+        if (ok) {
+          console.log(`%c[SFL Bridge] ✔️ Đã click chọn "${itemName}" trên Hotbar DOM!`, "color: #00e676; font-weight: bold;");
+        }
       }
 
       window.postMessage({
@@ -954,6 +1306,308 @@
         reqId: data.reqId,
         ok: ok,
         itemName: itemName,
+      }, "*");
+      return;
+    }
+
+    if (data.type === "SFL_BULK_FERTILISE") {
+      const svc = findGameService();
+      let ok = false;
+      let count = 0;
+      let error = null;
+
+      if (svc) {
+        try {
+          const snap = svc.getSnapshot();
+          const ctx = snap?.context || snap?.value?.context || {};
+          const state = ctx.state || ctx.gameState || ctx;
+          const fertName = data.fertiliser || "Sprout Mix";
+          let availableFert = toSafeNumber(state?.inventory?.[fertName]);
+
+          if (state && state.crops && availableFert > 0) {
+            const plotIds = Object.keys(state.crops);
+            for (const id of plotIds) {
+              if (availableFert <= 0) break;
+              const plot = state.crops[id];
+              if (!plot || (plot.x === undefined && plot.coordinates?.x === undefined) || plot.removedAt > 0) continue;
+              if (plot.fertiliser) continue; // Đã bón phân rồi thì bỏ qua
+
+              try {
+                svc.send({
+                  type: "plot.fertilised",
+                  plotID: String(id),
+                  fertiliser: fertName,
+                });
+                count++;
+                availableFert--;
+              } catch (_e) {}
+            }
+
+            if (count > 0) {
+              ok = true;
+              try { svc.send({ type: "SAVE" }); } catch (_e) {}
+            }
+          }
+        } catch (e) {
+          error = e?.message || String(e);
+        }
+      } else {
+        error = "no_service";
+      }
+
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_BULK_FERTILISE_RESULT",
+        reqId: data.reqId,
+        ok: ok,
+        count: count,
+        error: error,
+      }, "*");
+      return;
+    }
+
+    if (data.type === "SFL_BULK_PLANT") {
+      const svc = findGameService();
+      let ok = false;
+      let count = 0;
+      let error = null;
+      const plantedDetails = [];
+
+      if (svc) {
+        try {
+          const snap = svc.getSnapshot();
+          const ctx = snap?.context || snap?.value?.context || {};
+          const state = ctx.state || ctx.gameState || ctx;
+
+          if (state && state.crops) {
+            // Lấy toàn bộ ô đất trống thực sự TRÊN ĐẢO (loại bỏ 100% ô cất trong kho/rương đồ)
+            const emptyPlotIds = Object.keys(state.crops).filter((id) => {
+              const p = state.crops[id];
+              if (!p || (p.x === undefined && p.coordinates?.x === undefined) || p.removedAt > 0) return false;
+              const plantedAt = toSafeNumber(p.crop?.plantedAt ?? p.plantedAt);
+              const cropName = String(p.crop?.name || p.cropName || "").trim();
+              return !cropName || plantedAt <= 0;
+            });
+
+            if (emptyPlotIds.length > 0) {
+              const season = (state.season?.season || "spring").toLowerCase();
+              const cropTimes = {
+                "Sunflower Seed": 60,
+                "Potato Seed": 300,
+                "Rhubarb Seed": 600,
+                "Pumpkin Seed": 1800,
+                "Zucchini Seed": 1800,
+                "Carrot Seed": 3600,
+                "Yam Seed": 3600,
+                "Cabbage Seed": 7200,
+                "Broccoli Seed": 7200,
+                "Soybean Seed": 10800,
+                "Beetroot Seed": 14400,
+                "Pepper Seed": 14400,
+                "Cauliflower Seed": 28800,
+                "Parsnip Seed": 43200,
+                "Eggplant Seed": 57600,
+                "Corn Seed": 72000,
+                "Onion Seed": 72000,
+                "Radish Seed": 86400,
+                "Wheat Seed": 86400,
+                "Turnip Seed": 86400,
+                "Kale Seed": 129600,
+                "Artichoke Seed": 129600,
+                "Barley Seed": 172800,
+              };
+
+              const SEASONAL_CROP_SEEDS_TABLE = {
+                spring: ["Sunflower Seed", "Rhubarb Seed", "Carrot Seed", "Cabbage Seed", "Soybean Seed", "Corn Seed", "Wheat Seed", "Kale Seed", "Barley Seed"],
+                summer: ["Sunflower Seed", "Potato Seed", "Zucchini Seed", "Pepper Seed", "Beetroot Seed", "Cauliflower Seed", "Eggplant Seed", "Radish Seed", "Wheat Seed"],
+                autumn: ["Potato Seed", "Pumpkin Seed", "Carrot Seed", "Yam Seed", "Broccoli Seed", "Soybean Seed", "Wheat Seed", "Barley Seed", "Artichoke Seed"],
+                winter: ["Sunflower Seed", "Potato Seed", "Cabbage Seed", "Beetroot Seed", "Cauliflower Seed", "Parsnip Seed", "Onion Seed", "Turnip Seed", "Wheat Seed", "Kale Seed"],
+              };
+
+              let seedOrder = [];
+              if (data.seedName && data.seedName !== "AUTO") {
+                seedOrder = [data.seedName];
+              } else {
+                // Ưu tiên hạt đất ruộng đúng mùa, sắp xếp từ ngắn ngày nhất -> dài ngày nhất
+                const seasonalCropSeeds = SEASONAL_CROP_SEEDS_TABLE[season] || SEASONAL_CROP_SEEDS_TABLE.spring;
+                seedOrder = seasonalCropSeeds
+                  .filter((s) => cropTimes[s] !== undefined)
+                  .sort((a, b) => (cropTimes[a] || 999999) - (cropTimes[b] || 999999));
+
+                // Thêm bất kỳ loại hạt đất ruộng nào còn trong kho nếu hạt theo mùa hết
+                for (const k of Object.keys(state.inventory || {})) {
+                  if (k.endsWith(" Seed") && !seedOrder.includes(k) && cropTimes[k] !== undefined) {
+                    seedOrder.push(k);
+                  }
+                }
+              }
+
+              let remainingEmptyPlotIds = [...emptyPlotIds];
+
+              for (const sName of seedOrder) {
+                if (remainingEmptyPlotIds.length === 0) break;
+
+                let available = toSafeNumber(state.inventory?.[sName]);
+                if (available <= 0) continue;
+
+                // 1. Thử gửi event bulkPlant của game: seeds.bulkPlanted
+                let batchPlanted = 0;
+                try {
+                  try {
+                    svc.send({
+                      type: "seeds.bulkPlanted",
+                      seed: sName,
+                    });
+                  } catch (_e1) {}
+                  try {
+                    svc.send("seeds.bulkPlanted", {
+                      seed: sName,
+                    });
+                  } catch (_e2) {}
+
+                  const postSnap = svc.getSnapshot();
+                  const postCrops = postSnap?.context?.state?.crops || {};
+                  // Kiểm tra số lượng plot đã được gieo
+                  const newlyPlanted = remainingEmptyPlotIds.filter((pId) => {
+                    const p = postCrops[pId];
+                    return p && p.crop && p.crop.plantedAt > 0;
+                  });
+
+                  if (newlyPlanted.length > 0) {
+                    batchPlanted = newlyPlanted.length;
+                    remainingEmptyPlotIds = remainingEmptyPlotIds.filter((pId) => !newlyPlanted.includes(pId));
+                    count += batchPlanted;
+                    available = Math.max(0, available - batchPlanted);
+                  }
+                } catch (_bulkErr) {
+                  batchPlanted = 0;
+                }
+
+                // 2. Nếu seeds.bulkPlanted chưa xử lý hết, duyệt từng ô ruộng với seed.planted
+                let singlePlanted = 0;
+                if (available > 0 && remainingEmptyPlotIds.length > 0) {
+                  const plotsToPlant = [...remainingEmptyPlotIds];
+                  for (let pi = 0; pi < plotsToPlant.length; pi++) {
+                    if (available <= 0) break;
+                    const plotId = plotsToPlant[pi];
+                    try {
+                      const cropRandomId = Math.random().toString(36).slice(2, 10);
+                      try {
+                        svc.send({
+                          type: "seed.planted",
+                          index: String(plotId),
+                          item: sName,
+                          cropId: cropRandomId,
+                        });
+                      } catch (_e3) {}
+                      try {
+                        svc.send("seed.planted", {
+                          index: String(plotId),
+                          item: sName,
+                          cropId: cropRandomId,
+                        });
+                      } catch (_e4) {}
+                      count++;
+                      singlePlanted++;
+                      available--;
+                      remainingEmptyPlotIds = remainingEmptyPlotIds.filter((id) => id !== plotId);
+                    } catch (plantErr) {
+                      console.warn(`[SFL Bridge] Bỏ qua ô ${plotId} do lỗi:`, plantErr?.message || plantErr);
+                    }
+                  }
+                }
+
+                const totalPlantedThisSeed = batchPlanted + singlePlanted;
+                if (totalPlantedThisSeed > 0) {
+                  plantedDetails.push({ seed: sName, count: totalPlantedThisSeed });
+                  if (state.inventory) {
+                    state.inventory[sName] = available;
+                  }
+                }
+              }
+
+              if (count > 0) {
+                ok = true;
+                try { svc.send({ type: "SAVE" }); } catch (_e) {}
+                try { svc.send("SAVE"); } catch (_e) {}
+              }
+            }
+          }
+        } catch (e) {
+          error = e?.message || String(e);
+        }
+      } else {
+        error = "no_service";
+      }
+
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_BULK_PLANT_RESULT",
+        reqId: data.reqId,
+        ok: ok,
+        count: count,
+        planted: plantedDetails,
+        error: error,
+      }, "*");
+      return;
+    }
+
+    if (data.type === "SFL_HARVEST_HONEY") {
+      const svc = findGameService();
+      let ok = false;
+      let count = 0;
+      let error = null;
+      if (svc) {
+        try {
+          const snap = svc.getSnapshot();
+          const ctx = snap?.context || snap?.value?.context || {};
+          const state = ctx.state || ctx.gameState || ctx;
+          const DEFAULT_HONEY_PRODUCTION_TIME = 24 * 60 * 60 * 1000;
+          const now = Date.now();
+
+          if (state && state.beehives) {
+            for (const [id, hive] of Object.entries(state.beehives)) {
+              const baseProduced = toSafeNumber(hive?.honey?.produced);
+              const updatedAt = toSafeNumber(hive?.honey?.updatedAt);
+              const attachedFlowers = (Array.isArray(hive?.flowers) ? hive.flowers : [])
+                .slice()
+                .sort((a, b) => (toSafeNumber(a.attachedAt) - toSafeNumber(b.attachedAt)));
+
+              const producedMs = attachedFlowers.reduce((produced, attachedFlower) => {
+                const start = Math.max(updatedAt, toSafeNumber(attachedFlower.attachedAt));
+                const end = Math.min(now, toSafeNumber(attachedFlower.attachedUntil));
+                const honey = Math.max(end - start, 0) * (toSafeNumber(attachedFlower.rate) || 1);
+                return produced + honey;
+              }, baseProduced);
+
+              // CHỈ THU HOẠCH KHI HŨ MẬT ĐÃ ĐẦY 100% (>= 86,400,000 ms)
+              if (producedMs >= DEFAULT_HONEY_PRODUCTION_TIME) {
+                try { svc.send({ type: "beehive.harvested", id: String(id) }); } catch (_e1) {}
+                try { svc.send("beehive.harvested", { id: String(id) }); } catch (_e2) {}
+                count++;
+              }
+            }
+
+            if (count > 0) {
+              ok = true;
+              try { svc.send({ type: "SAVE" }); } catch (_e) {}
+              try { svc.send("SAVE"); } catch (_e) {}
+            }
+          }
+        } catch (e) {
+          error = e?.message || String(e);
+        }
+      } else {
+        error = "no_service";
+      }
+
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_HARVEST_HONEY_RESULT",
+        reqId: data.reqId,
+        ok,
+        count,
+        error,
       }, "*");
       return;
     }
@@ -980,16 +1634,49 @@
       return;
     }
 
+    if (data.type === "SFL_BATCH_BUY_SEEDS") {
+      const res = batchBuySeedsViaService(data.season);
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_BATCH_BUY_SEEDS_RESULT",
+        reqId: data.reqId,
+        ...res,
+      }, "*");
+      return;
+    }
+
+    if (data.type === "SFL_BUY_SINGLE_SEED") {
+      const res = buySingleSeedViaService(data.seedName, data.amount || 1);
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_BUY_SINGLE_SEED_RESULT",
+        reqId: data.reqId,
+        ...res,
+      }, "*");
+      return;
+    }
+
     if (data.type === "SFL_CLAIM_DAILY_REWARD") {
       const svc = findGameService();
       let ok = false;
       let error = null;
+      let alreadyClaimed = false;
       if (svc) {
         try {
-          svc.send("dailyReward.claimed");
-          svc.send("CONTINUE");
-          try { svc.send({ type: "SAVE" }); } catch (_e) {}
-          ok = true;
+          const state = svc.state?.context?.state;
+          const today = new Date();
+          today.setUTCHours(0, 0, 0, 0);
+          const chestCollectedAt = toSafeNumber(state?.dailyRewards?.chest?.collectedAt ?? state?.dailyRewards?.collectedAt);
+
+          if (chestCollectedAt > today.getTime()) {
+            alreadyClaimed = true;
+            ok = true;
+          } else {
+            svc.send("dailyReward.claimed");
+            svc.send("CONTINUE");
+            try { svc.send({ type: "SAVE" }); } catch (_e) {}
+            ok = true;
+          }
         } catch (e) {
           error = e?.message || String(e);
         }
@@ -1001,6 +1688,7 @@
         type: "SFL_CLAIM_DAILY_REWARD_RESULT",
         reqId: data.reqId,
         ok,
+        alreadyClaimed,
         error,
       }, "*");
       return;
@@ -1010,11 +1698,22 @@
       const svc = findGameService();
       let ok = false;
       let error = null;
+      let alreadyRestocked = false;
       if (svc) {
         try {
-          svc.send("shipment.restocked");
-          try { svc.send({ type: "SAVE" }); } catch (_e) {}
-          ok = true;
+          const state = svc.state?.context?.state;
+          const today = new Date();
+          today.setUTCHours(0, 0, 0, 0);
+          const restockedAt = toSafeNumber(state?.shipments?.restockedAt);
+
+          if (restockedAt > today.getTime()) {
+            alreadyRestocked = true;
+            ok = true;
+          } else {
+            svc.send("shipment.restocked");
+            try { svc.send({ type: "SAVE" }); } catch (_e) {}
+            ok = true;
+          }
         } catch (e) {
           error = e?.message || String(e);
         }
@@ -1026,6 +1725,7 @@
         type: "SFL_RESTOCK_SHIPMENT_RESULT",
         reqId: data.reqId,
         ok,
+        alreadyRestocked,
         error,
       }, "*");
       return;
@@ -1153,6 +1853,8 @@
           const patches = svc.state?.context?.state?.fruitPatches || {};
           const patchIds = data.patchIds || (data.patchId !== undefined ? [data.patchId] : Object.keys(patches));
           for (const pId of patchIds) {
+            const p = patches[pId];
+            if (!p || (p.x === undefined && p.coordinates?.x === undefined) || p.removedAt > 0) continue;
             try {
               svc.send({
                 type: "fruit.harvested",
@@ -1203,6 +1905,7 @@
           for (const pId of patchIds) {
             if (remAxes <= 0) break;
             const p = patches[pId];
+            if (!p || (p.x === undefined && p.coordinates?.x === undefined) || p.removedAt > 0) continue;
             // Cây ăn quả chết: có fruit nhưng harvestsLeft hết (bị xóa hoặc <= 0)
             const isDeadTree = p?.fruit && (!p.fruit.harvestsLeft || toSafeNumber(p.fruit.harvestsLeft) <= 0);
             if (isDeadTree) {
@@ -1280,7 +1983,7 @@
           const patchIds = data.patchIds || Object.keys(patches);
           for (const pId of patchIds) {
             const p = patches[pId];
-            if (!p) continue;
+            if (!p || (p.x === undefined && p.coordinates?.x === undefined) || p.removedAt > 0) continue;
             // Chỉ trồng vào ô đất trống (không có fruit hoặc fruit.plantedAt rỗng)
             const isEmpty = !p.fruit || !p.fruit.plantedAt;
             if (!isEmpty) continue;
@@ -1321,6 +2024,382 @@
         error,
         plantedCount,
         plantedDetails,
+      }, "*");
+      return;
+    }
+
+    if (data.type === "SFL_HARVEST_FLOWERS") {
+      const svc = findGameService();
+      let ok = false;
+      let error = null;
+      let harvestedCount = 0;
+      if (svc) {
+        try {
+          const snap = svc.getSnapshot();
+          const ctx = snap?.context || snap?.value?.context || {};
+          const state = ctx.state || ctx.gameState || ctx;
+          const flowerBeds = state?.flowers?.flowerBeds || {};
+          const now = Date.now();
+          const bedIds = data.bedIds || Object.keys(flowerBeds);
+
+          for (const bedId of bedIds) {
+            const bed = flowerBeds[bedId];
+            if (!bed || (bed.x === undefined && bed.coordinates?.x === undefined) || bed.removedAt > 0) continue;
+            const flower = bed.flower;
+            if (!flower || !flower.plantedAt) continue;
+            const readyAt = toSafeNumber(flower.readyAt);
+            if (readyAt > now) continue;
+
+            try {
+              try { svc.send({ type: "flower.harvested", id: String(bedId) }); } catch (_e1) {}
+              try { svc.send("flower.harvested", { id: String(bedId) }); } catch (_e2) {}
+              harvestedCount++;
+            } catch (_err) {}
+          }
+
+          if (harvestedCount > 0) {
+            try { svc.send({ type: "SAVE" }); } catch (_e) {}
+            try { svc.send("SAVE"); } catch (_e) {}
+            ok = true;
+          }
+        } catch (e) {
+          error = e?.message || String(e);
+        }
+      } else {
+        error = "no_service";
+      }
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_HARVEST_FLOWERS_RESULT",
+        reqId: data.reqId,
+        ok,
+        error,
+        harvestedCount,
+      }, "*");
+      return;
+    }
+
+    if (data.type === "SFL_PLANT_FLOWERS") {
+      const svc = findGameService();
+      let ok = false;
+      let error = null;
+      let plantedCount = 0;
+      const plantedDetails = [];
+      if (svc) {
+        try {
+          const snap = svc.getSnapshot();
+          const ctx = snap?.context || snap?.value?.context || {};
+          const state = ctx.state || ctx.gameState || ctx;
+          const flowerBeds = state?.flowers?.flowerBeds || {};
+          const inventory = state?.inventory || {};
+          const season = (state?.season?.season || "spring").toLowerCase();
+
+          const SEASONAL_FLOWER_SEEDS = {
+            spring: ["Sunpetal Seed", "Bloom Seed", "Lily Seed", "Lavender Seed"],
+            summer: ["Sunpetal Seed", "Bloom Seed", "Lily Seed", "Gladiolus Seed"],
+            autumn: ["Sunpetal Seed", "Bloom Seed", "Lily Seed", "Clover Seed"],
+            winter: ["Sunpetal Seed", "Bloom Seed", "Lily Seed", "Edelweiss Seed"],
+          };
+
+          const SET_1_SEEDS = ["Sunpetal Seed", "Bloom Seed", "Lily Seed"];
+          const SET_1_CROSSBREED_PRIORITY = [
+            { name: "Sunflower", amount: 50 },
+            { name: "Beetroot", amount: 10 },
+            { name: "Cauliflower", amount: 5 },
+            { name: "Parsnip", amount: 5 },
+            { name: "Eggplant", amount: 5 },
+            { name: "Radish", amount: 5 },
+            { name: "Kale", amount: 5 },
+            { name: "Blueberry", amount: 3 },
+            { name: "Apple", amount: 3 },
+            { name: "Banana", amount: 3 },
+            // Single flowers
+            { name: "Red Pansy", amount: 1 }, { name: "Yellow Pansy", amount: 1 }, { name: "Purple Pansy", amount: 1 }, { name: "White Pansy", amount: 1 }, { name: "Blue Pansy", amount: 1 },
+            { name: "Red Cosmos", amount: 1 }, { name: "Yellow Cosmos", amount: 1 }, { name: "Purple Cosmos", amount: 1 }, { name: "White Cosmos", amount: 1 }, { name: "Blue Cosmos", amount: 1 },
+            { name: "Prism Petal", amount: 1 },
+            { name: "Red Balloon Flower", amount: 1 }, { name: "Yellow Balloon Flower", amount: 1 }, { name: "Purple Balloon Flower", amount: 1 }, { name: "White Balloon Flower", amount: 1 }, { name: "Blue Balloon Flower", amount: 1 },
+            { name: "Red Daffodil", amount: 1 }, { name: "Yellow Daffodil", amount: 1 }, { name: "Purple Daffodil", amount: 1 }, { name: "White Daffodil", amount: 1 }, { name: "Blue Daffodil", amount: 1 },
+            { name: "Celestial Frostbloom", amount: 1 },
+            { name: "Red Carnation", amount: 1 }, { name: "Yellow Carnation", amount: 1 }, { name: "Purple Carnation", amount: 1 }, { name: "White Carnation", amount: 1 }, { name: "Blue Carnation", amount: 1 },
+            { name: "Red Lotus", amount: 1 }, { name: "Yellow Lotus", amount: 1 }, { name: "Purple Lotus", amount: 1 }, { name: "White Lotus", amount: 1 }, { name: "Blue Lotus", amount: 1 },
+            { name: "Primula Enigma", amount: 1 },
+          ];
+
+          const SET_2_CROSSBREED_PRIORITY = [
+            { name: "Rhubarb", amount: 25 },
+            { name: "Pepper", amount: 15 },
+            { name: "Onion", amount: 10 },
+            { name: "Artichoke", amount: 8 },
+            { name: "Barley", amount: 5 },
+            // Single flowers
+            { name: "Red Edelweiss", amount: 1 }, { name: "Yellow Edelweiss", amount: 1 }, { name: "Purple Edelweiss", amount: 1 }, { name: "White Edelweiss", amount: 1 }, { name: "Blue Edelweiss", amount: 1 },
+            { name: "Red Gladiolus", amount: 1 }, { name: "Yellow Gladiolus", amount: 1 }, { name: "Purple Gladiolus", amount: 1 }, { name: "White Gladiolus", amount: 1 }, { name: "Blue Gladiolus", amount: 1 },
+            { name: "Red Lavender", amount: 1 }, { name: "Yellow Lavender", amount: 1 }, { name: "Purple Lavender", amount: 1 }, { name: "White Lavender", amount: 1 }, { name: "Blue Lavender", amount: 1 },
+            { name: "Red Clover", amount: 1 }, { name: "Yellow Clover", amount: 1 }, { name: "Purple Clover", amount: 1 }, { name: "White Clover", amount: 1 }, { name: "Blue Clover", amount: 1 },
+          ];
+
+          const seasonalSeeds = SEASONAL_FLOWER_SEEDS[season] || SEASONAL_FLOWER_SEEDS.spring;
+
+          const invSim = {};
+          for (const [k, v] of Object.entries(inventory)) {
+            invSim[k] = toSafeNumber(v);
+          }
+
+          const bedIds = data.bedIds || Object.keys(flowerBeds);
+          for (const bedId of bedIds) {
+            const bed = flowerBeds[bedId];
+            if (!bed || (bed.x === undefined && bed.coordinates?.x === undefined) || bed.removedAt > 0) continue;
+            // Chỉ trồng ô trống
+            if (bed.flower && bed.flower.plantedAt) continue;
+
+            // Tìm hạt giống hoa có trong kho đúng mùa
+            let selectedSeed = null;
+            let selectedCrossbreed = null;
+
+            for (const sName of seasonalSeeds) {
+              if ((invSim[sName] || 0) < 1) continue;
+              const isSet1 = SET_1_SEEDS.includes(sName);
+              const crossList = isSet1 ? SET_1_CROSSBREED_PRIORITY : SET_2_CROSSBREED_PRIORITY;
+              const match = crossList.find((cb) => (invSim[cb.name] || 0) >= cb.amount);
+              if (match) {
+                selectedSeed = sName;
+                selectedCrossbreed = match;
+                break;
+              }
+            }
+
+            if (!selectedSeed || !selectedCrossbreed) continue;
+
+            try {
+              try {
+                svc.send({
+                  type: "flower.planted",
+                  id: String(bedId),
+                  seed: selectedSeed,
+                  crossbreed: selectedCrossbreed.name,
+                });
+              } catch (_e1) {}
+              try {
+                svc.send("flower.planted", {
+                  id: String(bedId),
+                  seed: selectedSeed,
+                  crossbreed: selectedCrossbreed.name,
+                });
+              } catch (_e2) {}
+
+              plantedCount++;
+              plantedDetails.push({ bedId, seed: selectedSeed, crossbreed: selectedCrossbreed.name, amount: selectedCrossbreed.amount });
+              invSim[selectedSeed] = Math.max(0, (invSim[selectedSeed] || 0) - 1);
+              invSim[selectedCrossbreed.name] = Math.max(0, (invSim[selectedCrossbreed.name] || 0) - selectedCrossbreed.amount);
+            } catch (_plantErr) {}
+          }
+
+          if (plantedCount > 0) {
+            try { svc.send({ type: "SAVE" }); } catch (_e) {}
+            try { svc.send("SAVE"); } catch (_e) {}
+            ok = true;
+          }
+        } catch (e) {
+          error = e?.message || String(e);
+        }
+      } else {
+        error = "no_service";
+      }
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_PLANT_FLOWERS_RESULT",
+        reqId: data.reqId,
+        ok,
+        error,
+        plantedCount,
+        plantedDetails,
+      }, "*");
+      return;
+    }
+
+    if (data.type === "SFL_BUY_SEASONAL_SEEDS") {
+      const svc = findGameService();
+      let ok = false;
+      let error = null;
+      const boughtList = [];
+      let totalCoinsSpent = 0;
+      let remainingCoins = 0;
+
+      if (svc) {
+        try {
+          const state = svc.state?.context?.state;
+          const coins = toSafeNumber(state?.coins);
+          remainingCoins = coins;
+
+          if (coins < 1) {
+            window.postMessage({
+              _sfl: true,
+              type: "SFL_BUY_SEASONAL_SEEDS_RESULT",
+              reqId: data.reqId,
+              ok: false,
+              error: "insufficient_coins",
+              boughtList: [],
+              totalCoinsSpent: 0,
+              remainingCoins: coins,
+            }, "*");
+            return;
+          }
+
+          const stock = state?.stock || {};
+          const inventory = state?.inventory || {};
+          const season = (state?.season?.season || "spring").toLowerCase();
+          const collectibles = state?.collectibles || {};
+
+          // Danh mục tất cả hạt giống trong game kèm giá gốc, loại và điểm trồng
+          const ALL_SEEDS_CATALOG = [
+            // Crops
+            { name: "Sunflower Seed", price: 0.01, category: "Crop", level: 1, spot: "Crop Plot" },
+            { name: "Potato Seed", price: 0.1, category: "Crop", level: 1, spot: "Crop Plot" },
+            { name: "Rhubarb Seed", price: 0.15, category: "Crop", level: 1, spot: "Crop Plot" },
+            { name: "Pumpkin Seed", price: 0.2, category: "Crop", level: 2, spot: "Crop Plot" },
+            { name: "Zucchini Seed", price: 0.2, category: "Crop", level: 2, spot: "Crop Plot" },
+            { name: "Carrot Seed", price: 0.5, category: "Crop", level: 2, spot: "Crop Plot" },
+            { name: "Yam Seed", price: 0.5, category: "Crop", level: 2, spot: "Crop Plot" },
+            { name: "Cabbage Seed", price: 1, category: "Crop", level: 3, spot: "Crop Plot" },
+            { name: "Broccoli Seed", price: 1, category: "Crop", level: 3, spot: "Crop Plot" },
+            { name: "Soybean Seed", price: 1.5, category: "Crop", level: 3, spot: "Crop Plot" },
+            { name: "Beetroot Seed", price: 2, category: "Crop", level: 3, spot: "Crop Plot" },
+            { name: "Pepper Seed", price: 2, category: "Crop", level: 3, spot: "Crop Plot" },
+            { name: "Cauliflower Seed", price: 3, category: "Crop", level: 4, spot: "Crop Plot" },
+            { name: "Parsnip Seed", price: 5, category: "Crop", level: 4, spot: "Crop Plot" },
+            { name: "Eggplant Seed", price: 6, category: "Crop", level: 5, spot: "Crop Plot" },
+            { name: "Corn Seed", price: 7, category: "Crop", level: 5, spot: "Crop Plot" },
+            { name: "Onion Seed", price: 7, category: "Crop", level: 5, spot: "Crop Plot" },
+            { name: "Radish Seed", price: 7, category: "Crop", level: 5, spot: "Crop Plot" },
+            { name: "Wheat Seed", price: 9, category: "Crop", level: 5, spot: "Crop Plot" },
+            { name: "Turnip Seed", price: 9, category: "Crop", level: 5, spot: "Crop Plot" },
+            { name: "Kale Seed", price: 10, category: "Crop", level: 6, spot: "Crop Plot" },
+            { name: "Artichoke Seed", price: 12, category: "Crop", level: 6, spot: "Crop Plot" },
+            { name: "Barley Seed", price: 15, category: "Crop", level: 6, spot: "Crop Plot" },
+
+            // Fruits (Hoa quả)
+            { name: "Tomato Seed", price: 5, category: "Fruit", level: 13, spot: "Fruit Patch" },
+            { name: "Lemon Seed", price: 15, category: "Fruit", level: 12, spot: "Fruit Patch" },
+            { name: "Blueberry Seed", price: 30, category: "Fruit", level: 13, spot: "Fruit Patch" },
+            { name: "Orange Seed", price: 50, category: "Fruit", level: 14, spot: "Fruit Patch" },
+            { name: "Apple Seed", price: 70, category: "Fruit", level: 15, spot: "Fruit Patch" },
+            { name: "Banana Plant", price: 70, category: "Fruit", level: 16, spot: "Fruit Patch" },
+
+            // Flowers (Hoa)
+            { name: "Sunpetal Seed", price: 16, category: "Flower", level: 13, spot: "Flower Bed" },
+            { name: "Bloom Seed", price: 32, category: "Flower", level: 22, spot: "Flower Bed" },
+            { name: "Lily Seed", price: 48, category: "Flower", level: 27, spot: "Flower Bed" },
+            { name: "Edelweiss Seed", price: 96, category: "Flower", level: 35, spot: "Flower Bed" },
+            { name: "Gladiolus Seed", price: 96, category: "Flower", level: 35, spot: "Flower Bed" },
+            { name: "Lavender Seed", price: 96, category: "Flower", level: 35, spot: "Flower Bed" },
+            { name: "Clover Seed", price: 96, category: "Flower", level: 35, spot: "Flower Bed" },
+
+            // Greenhouse
+            { name: "Olive Seed", price: 160, category: "Greenhouse", level: 40, spot: "Greenhouse" },
+            { name: "Rice Seed", price: 160, category: "Greenhouse", level: 40, spot: "Greenhouse" },
+            { name: "Grape Seed", price: 320, category: "Greenhouse", level: 40, spot: "Greenhouse" },
+          ];
+
+          // Danh sách hạt giống được phép theo từng mùa vụ
+          const SEASONAL_SEEDS_MAP = {
+            spring: [
+              "Sunflower Seed", "Rhubarb Seed", "Carrot Seed", "Cabbage Seed", "Soybean Seed", "Corn Seed", "Wheat Seed", "Kale Seed", "Barley Seed",
+              "Tomato Seed", "Blueberry Seed", "Orange Seed",
+              "Sunpetal Seed", "Bloom Seed", "Lily Seed", "Lavender Seed",
+              "Rice Seed", "Olive Seed", "Grape Seed"
+            ],
+            summer: [
+              "Sunflower Seed", "Potato Seed", "Zucchini Seed", "Pepper Seed", "Beetroot Seed", "Cauliflower Seed", "Eggplant Seed", "Radish Seed", "Wheat Seed",
+              "Lemon Seed", "Orange Seed", "Banana Plant",
+              "Sunpetal Seed", "Bloom Seed", "Lily Seed", "Gladiolus Seed",
+              "Rice Seed", "Olive Seed", "Grape Seed"
+            ],
+            autumn: [
+              "Potato Seed", "Pumpkin Seed", "Carrot Seed", "Yam Seed", "Broccoli Seed", "Soybean Seed", "Wheat Seed", "Barley Seed", "Artichoke Seed",
+              "Tomato Seed", "Apple Seed", "Banana Plant",
+              "Sunpetal Seed", "Bloom Seed", "Lily Seed", "Clover Seed",
+              "Rice Seed", "Olive Seed", "Grape Seed"
+            ],
+            winter: [
+              "Potato Seed", "Cabbage Seed", "Beetroot Seed", "Cauliflower Seed", "Parsnip Seed", "Onion Seed", "Turnip Seed", "Wheat Seed", "Kale Seed",
+              "Lemon Seed", "Blueberry Seed", "Apple Seed",
+              "Sunpetal Seed", "Bloom Seed", "Lily Seed", "Edelweiss Seed",
+              "Rice Seed", "Olive Seed", "Grape Seed"
+            ],
+          };
+
+          const allowedNames = SEASONAL_SEEDS_MAP[season] || SEASONAL_SEEDS_MAP.spring;
+          // Lọc danh sách hạt giống đúng mùa và sắp xếp TỪ RẺ ĐẾN ĐẮT (price ASCENDING)
+          const seasonalCandidates = ALL_SEEDS_CATALOG
+            .filter((s) => allowedNames.includes(s.name))
+            .sort((a, b) => a.price - b.price);
+
+          const hasKuebiko = !!(collectibles["Kuebiko"] && collectibles["Kuebiko"].length);
+          const hasHungryCaterpillar = !!(collectibles["Hungry Caterpillar"] && collectibles["Hungry Caterpillar"].length);
+
+          for (const s of seasonalCandidates) {
+            // 1. Kiểm tra stock trong cửa hàng
+            const stockQty = toSafeNumber(stock[s.name]);
+            if (stockQty <= 0) continue;
+
+            // 2. Tính đơn giá sau chiết khấu/boosts
+            let unitPrice = s.price;
+            if (hasKuebiko) unitPrice = 0;
+            if (s.category === "Flower" && hasHungryCaterpillar) unitPrice = 0;
+
+            // 3. Tính số lượng tối đa có thể mua (dựa trên coins và stock)
+            let maxBuy = stockQty;
+            if (unitPrice > 0) {
+              const affordable = Math.floor(remainingCoins / unitPrice);
+              maxBuy = Math.min(maxBuy, affordable);
+            }
+
+            // 4. Giới hạn theo sức chứa kho đồ (tối đa 400 hạt giống)
+            const currentInv = toSafeNumber(inventory[s.name]);
+            const headroom = Math.max(0, 400 - currentInv);
+            maxBuy = Math.min(maxBuy, headroom);
+
+            if (maxBuy <= 0) continue;
+
+            try {
+              svc.send({
+                type: "seed.bought",
+                item: s.name,
+                amount: maxBuy,
+              });
+              const cost = maxBuy * unitPrice;
+              remainingCoins = Math.max(0, remainingCoins - cost);
+              totalCoinsSpent += cost;
+              boughtList.push({
+                seed: s.name,
+                category: s.category,
+                amount: maxBuy,
+                unitPrice: unitPrice,
+                totalCost: cost,
+              });
+            } catch (_e) {}
+          }
+
+          if (boughtList.length > 0) {
+            try { svc.send({ type: "SAVE" }); } catch (_e) {}
+            ok = true;
+          }
+        } catch (e) {
+          error = e?.message || String(e);
+        }
+      } else {
+        error = "no_service";
+      }
+
+      window.postMessage({
+        _sfl: true,
+        type: "SFL_BUY_SEASONAL_SEEDS_RESULT",
+        reqId: data.reqId,
+        ok,
+        error,
+        boughtList,
+        totalCoinsSpent,
+        remainingCoins,
       }, "*");
       return;
     }

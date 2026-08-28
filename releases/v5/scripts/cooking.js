@@ -125,7 +125,9 @@
     const cacAnhClose = doc.querySelectorAll('img[src*="close"], img[src*="cancel"]');
     for (const img of cacAnhClose) {
       if (xemPhanTuRanh(img)) {
-        const nut = img.closest("button, [role='button'], div.cursor-pointer") || img;
+        const pText = (img.parentElement?.textContent || img.closest("div, button")?.textContent || "").toLowerCase();
+        if (pText.includes("vip") || (img.src || "").toLowerCase().includes("vip")) continue;
+        const nut = img.closest("button, [role='button']") || img;
         clickTam(nut);
         await ngu(250);
         return;
@@ -183,7 +185,7 @@
         const laBepKhaDung = slugs.length === 0 || slugs.some((s) => src.includes(s));
         if (!laBepKhaDung) continue;
 
-        const target = img.closest('[data-map-placement="true"]') || img.parentElement;
+        const target = img.closest('[data-map-placement]') || img.parentElement;
         if (!danhSach.includes(target)) danhSach.push(target);
       }
     }
