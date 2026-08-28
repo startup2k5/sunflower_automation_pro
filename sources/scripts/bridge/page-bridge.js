@@ -2690,6 +2690,7 @@
     }
 
     if (data.type === "SFL_DELIVER_ORDERS") {
+      const svc = findGameService();
       let deliveredList = [];
       let ok = false;
       let error = null;
